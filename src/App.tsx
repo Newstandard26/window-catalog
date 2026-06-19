@@ -1,0 +1,34 @@
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { TopNav } from './components/TopNav'
+import { Dashboard } from './pages/Dashboard'
+import { Catalog } from './pages/Catalog'
+import { Estimator } from './pages/Estimator'
+import { Projects } from './pages/Projects'
+import { CRM } from './pages/CRM'
+import { ClientProfile } from './pages/ClientProfile'
+
+// Phase 1: every page renders inside the same shell with the same header.
+export default function App() {
+  return (
+    <div className="flex min-h-screen flex-col">
+      <TopNav />
+      <main className="flex-1 pb-16">
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/catalog" element={<Catalog />} />
+          <Route path="/estimator" element={<Estimator />} />
+          <Route path="/estimator/:id" element={<Estimator />} />
+          <Route path="/projects" element={<Projects />} />
+          <Route path="/crm" element={<CRM />} />
+          <Route path="/crm/:clientId" element={<ClientProfile />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="mx-auto w-full max-w-content px-4 py-6 text-sm text-slate-500 sm:px-6 lg:px-8">
+          © {new Date().getFullYear()} New Standard Restoration LLC — Window Catalog
+        </div>
+      </footer>
+    </div>
+  )
+}
