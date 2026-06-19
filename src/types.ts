@@ -12,19 +12,43 @@ export const PIPELINE: EstimateStatus[] = [
   'Lost',
 ]
 
+export type CatalogTier = 'Good' | 'Better' | 'Best'
+export type WindowConstruction = 'New Construction' | 'Replacement'
+
+/**
+ * Energy performance per product line. Numeric values are nullable so a line can
+ * be scaffolded before the exact sourced numbers are entered (`null` = pending).
+ */
+export interface CatalogEnergy {
+  uFactor: number | null
+  shgc: number | null
+  /** Visible transmittance (visible light). */
+  visibleLight: number | null
+  /** Clear opening dimensions, e.g. `20.5" × 36"`. */
+  clearOpening: string | null
+  energyStar: boolean | null
+}
+
 export interface CatalogProduct {
   id: string
   brand: string
   series: string
-  material: 'Vinyl' | 'Fiberglass' | 'Wood-Clad'
-  tier: 'Good' | 'Better' | 'Best'
-  /** Baseline installed price per standard window unit. */
-  basePrice: number
-  /** Energy performance. */
-  uFactor: number
-  shgc: number
-  warranty: string
+  material: 'Vinyl' | 'Fiberglass' | 'Fibrex' | 'Wood-Clad'
+  tier: CatalogTier
+  /** New Construction vs Replacement. */
+  type: WindowConstruction
+  /** e.g. "Nail Fin · IN Setback · Sill Extender". */
+  configuration: string
+  /** Grille option, e.g. "Colonial 1H+2V" or "None". */
+  grilles: string
+  /** Installed unit price. `null` = real pricing pending from supplier. */
+  unitPrice: number | null
+  /** Supplier + order/quote reference. */
+  source: string
+  energy: CatalogEnergy
   highlight: string
+  /** True while exact pricing / energy numbers are still TBD. */
+  pending: boolean
 }
 
 export interface WindowItem {

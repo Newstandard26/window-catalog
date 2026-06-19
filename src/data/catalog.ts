@@ -1,82 +1,149 @@
 import type { CatalogProduct } from '../types'
 
-// The window product catalog. This page is the visual reference for the rest of
-// the app (Phase 2 theme is modeled on it).
+/**
+ * The NSR window catalog — real product lines.
+ *
+ * ⚠️ PRICING & ENERGY NUMBERS ARE PENDING. Per the data-restore task, exact unit
+ * prices and energy specs must come from the supplier source documents (ABC
+ * Supply / Andersen / ProVia / Pella quotes) — they are intentionally left as
+ * `null` (rendered as "Pending") rather than approximated. Fill these in from
+ * the source spreadsheet and set `pending: false` once verified.
+ *
+ * Configuration / type / grilles reflect the standard NSR spec for each line and
+ * can be adjusted per the source docs.
+ */
 export const CATALOG: CatalogProduct[] = [
   {
-    id: 'andersen-400',
+    id: 'harvey-windgate',
+    brand: 'Harvey Building Products',
+    series: 'Windgate',
+    material: 'Vinyl',
+    tier: 'Good',
+    type: 'New Construction',
+    configuration: 'Nail Fin · IN Setback · Sill Extender',
+    grilles: 'Colonial 1H+2V',
+    unitPrice: null, // TODO: ABC Supply pricing
+    source: 'Pricing pending — ABC Supply (order # TBD)',
+    energy: {
+      uFactor: null,
+      shgc: null,
+      visibleLight: null,
+      clearOpening: null,
+      energyStar: true,
+    },
+    highlight: 'Double-hung vinyl, value tier sourced via ABC Supply',
+    pending: true,
+  },
+  {
+    id: 'harvey-belmont',
+    brand: 'Harvey Building Products',
+    series: 'Belmont',
+    material: 'Vinyl',
+    tier: 'Better',
+    type: 'Replacement',
+    configuration: 'Exact Size · IN Setback',
+    grilles: 'Colonial 1H+2V',
+    unitPrice: null, // TODO: ABC Supply pricing
+    source: 'Pricing pending — ABC Supply (order # TBD)',
+    energy: {
+      uFactor: null,
+      shgc: null,
+      visibleLight: null,
+      clearOpening: null,
+      energyStar: true,
+    },
+    highlight: 'Double-hung vinyl replacement, upgraded glass package',
+    pending: true,
+  },
+  {
+    id: 'andersen-100',
     brand: 'Andersen',
-    series: '400 Series',
+    series: '100 Series',
+    material: 'Fibrex',
+    tier: 'Best',
+    type: 'Replacement',
+    configuration: 'Exact Size · IN Setback',
+    grilles: 'Colonial 1H+2V',
+    unitPrice: null, // TODO: Andersen quote
+    source: 'Pricing pending — Andersen (quote # TBD)',
+    energy: {
+      uFactor: null,
+      shgc: null,
+      visibleLight: null,
+      clearOpening: null,
+      energyStar: true,
+    },
+    highlight: 'Fibrex composite frame — strong, low-maintenance',
+    pending: true,
+  },
+  {
+    id: 'provia-en600',
+    brand: 'ProVia',
+    series: 'Endure EN600',
+    material: 'Vinyl',
+    tier: 'Best',
+    type: 'Replacement',
+    configuration: 'Exact Size · IN Setback · Sill Extender',
+    grilles: 'Colonial 1H+2V',
+    unitPrice: null, // TODO: ProVia order
+    source: 'Pricing pending — ProVia (order # TBD)',
+    energy: {
+      uFactor: null,
+      shgc: null,
+      visibleLight: null,
+      clearOpening: null,
+      energyStar: true,
+    },
+    highlight: 'Premium double-hung vinyl, foam-insulated frame & sash',
+    pending: true,
+  },
+  {
+    id: 'pella-lifestyle',
+    brand: 'Pella',
+    series: 'Lifestyle Series',
     material: 'Wood-Clad',
     tier: 'Best',
-    basePrice: 1185,
-    uFactor: 0.27,
-    shgc: 0.3,
-    warranty: '20 yr glass / 10 yr parts',
-    highlight: 'Low-E4 SmartSun glass, premium wood interior',
+    type: 'New Construction',
+    configuration: 'Nail Fin · IN Setback',
+    grilles: 'Colonial 1H+2V',
+    unitPrice: null, // TODO: Pella quote
+    source: 'Pricing pending — Pella (quote # TBD)',
+    energy: {
+      uFactor: null,
+      shgc: null,
+      visibleLight: null,
+      clearOpening: null,
+      energyStar: true,
+    },
+    highlight: 'Wood-clad, customizable performance glass packages',
+    pending: true,
   },
   {
-    id: 'pella-250',
+    id: 'pella-casement',
     brand: 'Pella',
-    series: '250 Series',
-    material: 'Vinyl',
-    tier: 'Better',
-    basePrice: 845,
-    uFactor: 0.29,
-    shgc: 0.27,
-    warranty: '20 yr glass / limited lifetime frame',
-    highlight: 'Insulated vinyl frame, dual-pane Low-E',
-  },
-  {
-    id: 'marvin-elevate',
-    brand: 'Marvin',
-    series: 'Elevate',
-    material: 'Fiberglass',
+    series: 'Lifestyle Casement',
+    material: 'Wood-Clad',
     tier: 'Best',
-    basePrice: 1320,
-    uFactor: 0.26,
-    shgc: 0.28,
-    warranty: '20 yr glass / 10 yr components',
-    highlight: 'Ultrex fiberglass exterior, wood interior',
-  },
-  {
-    id: 'milgard-tuscany',
-    brand: 'Milgard',
-    series: 'Tuscany V400',
-    material: 'Vinyl',
-    tier: 'Better',
-    basePrice: 760,
-    uFactor: 0.3,
-    shgc: 0.25,
-    warranty: 'Full lifetime, transferable',
-    highlight: 'SmartTouch hardware, positive-action lock',
-  },
-  {
-    id: 'simonton-6500',
-    brand: 'Simonton',
-    series: 'Reflections 6500',
-    material: 'Vinyl',
-    tier: 'Good',
-    basePrice: 615,
-    uFactor: 0.31,
-    shgc: 0.26,
-    warranty: 'Lifetime limited',
-    highlight: 'Budget-friendly, ENERGY STAR rated',
-  },
-  {
-    id: 'provia-aspect',
-    brand: 'ProVia',
-    series: 'Aspect',
-    material: 'Vinyl',
-    tier: 'Good',
-    basePrice: 690,
-    uFactor: 0.3,
-    shgc: 0.24,
-    warranty: 'Lifetime limited, transferable',
-    highlight: 'Foam-insulated frame, strong value tier',
+    type: 'New Construction',
+    configuration: 'Nail Fin · IN Setback',
+    grilles: 'None',
+    unitPrice: null, // TODO: Pella quote
+    source: 'Pricing pending — Pella (quote # TBD)',
+    energy: {
+      uFactor: null,
+      shgc: null,
+      visibleLight: null,
+      clearOpening: null,
+      energyStar: true,
+    },
+    highlight: 'Casement configuration, tight seal for high efficiency',
+    pending: true,
   },
 ]
 
 export function getProduct(id: string): CatalogProduct | undefined {
   return CATALOG.find((p) => p.id === id)
 }
+
+/** Unique materials present in the catalog, for filter chips. */
+export const CATALOG_MATERIALS = Array.from(new Set(CATALOG.map((p) => p.material)))

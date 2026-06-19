@@ -53,9 +53,9 @@ export const SEED_ESTIMATES: Estimate[] = [
     createdAt: '2026-05-04T15:00:00.000Z',
     updatedAt: '2026-05-20T15:00:00.000Z',
     items: [
-      { id: 'w1', location: 'Living Room', width: 36, height: 60, productId: 'andersen-400', quantity: 2, unitPrice: 1185 },
-      { id: 'w2', location: 'Primary Bedroom', width: 30, height: 48, productId: 'andersen-400', quantity: 3, unitPrice: 1185 },
-      { id: 'w3', location: 'Kitchen', width: 24, height: 36, productId: 'pella-250', quantity: 1, unitPrice: 845 },
+      { id: 'w1', location: 'Living Room', width: 36, height: 60, productId: 'andersen-100', quantity: 2, unitPrice: 1185 },
+      { id: 'w2', location: 'Primary Bedroom', width: 30, height: 48, productId: 'andersen-100', quantity: 3, unitPrice: 1185 },
+      { id: 'w3', location: 'Kitchen', width: 24, height: 36, productId: 'pella-lifestyle', quantity: 1, unitPrice: 845 },
     ],
   },
   {
@@ -68,8 +68,8 @@ export const SEED_ESTIMATES: Estimate[] = [
     createdAt: '2026-06-01T15:00:00.000Z',
     updatedAt: '2026-06-12T15:00:00.000Z',
     items: [
-      { id: 'w4', location: 'Unit 2A Front', width: 36, height: 60, productId: 'marvin-elevate', quantity: 4, unitPrice: 1320 },
-      { id: 'w5', location: 'Unit 2A Rear', width: 30, height: 48, productId: 'milgard-tuscany', quantity: 6, unitPrice: 760 },
+      { id: 'w4', location: 'Unit 2A Front', width: 36, height: 60, productId: 'pella-casement', quantity: 4, unitPrice: 1320 },
+      { id: 'w5', location: 'Unit 2A Rear', width: 30, height: 48, productId: 'harvey-windgate', quantity: 6, unitPrice: 760 },
     ],
   },
   {
@@ -82,8 +82,8 @@ export const SEED_ESTIMATES: Estimate[] = [
     createdAt: '2026-06-11T15:00:00.000Z',
     updatedAt: '2026-06-14T15:00:00.000Z',
     items: [
-      { id: 'w6', location: 'Front Bay', width: 48, height: 60, productId: 'simonton-6500', quantity: 1, unitPrice: 615 },
-      { id: 'w7', location: 'Bedrooms', width: 30, height: 48, productId: 'simonton-6500', quantity: 4, unitPrice: 615 },
+      { id: 'w6', location: 'Front Bay', width: 48, height: 60, productId: 'harvey-belmont', quantity: 1, unitPrice: 615 },
+      { id: 'w7', location: 'Bedrooms', width: 30, height: 48, productId: 'harvey-belmont', quantity: 4, unitPrice: 615 },
     ],
   },
   {
@@ -96,7 +96,7 @@ export const SEED_ESTIMATES: Estimate[] = [
     createdAt: '2026-06-16T15:00:00.000Z',
     updatedAt: '2026-06-16T15:00:00.000Z',
     items: [
-      { id: 'w8', location: 'Sunroom', width: 36, height: 72, productId: 'provia-aspect', quantity: 5, unitPrice: 690 },
+      { id: 'w8', location: 'Sunroom', width: 36, height: 72, productId: 'provia-en600', quantity: 5, unitPrice: 690 },
     ],
   },
 ]

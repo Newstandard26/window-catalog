@@ -11,6 +11,7 @@ import {
   estimateSubtotal,
   estimateTax,
   estimateTotal,
+  formatPrice,
   totalWindowCount,
 } from '../lib/format'
 import { PIPELINE, type Estimate, type EstimateStatus, type WindowItem } from '../types'
@@ -22,7 +23,7 @@ const SAMPLE_IMPORT: Omit<WindowItem, 'id'> = {
   height: 60,
   productId: CATALOG[0].id,
   quantity: 3,
-  unitPrice: CATALOG[0].basePrice,
+  unitPrice: CATALOG[0].unitPrice ?? 0,
 }
 
 export function Estimator() {
@@ -328,12 +329,14 @@ function ProductBuilder({ onAdd }: { onAdd: (item: Omit<WindowItem, 'id'>) => vo
     height: 60,
     productId: CATALOG[0].id,
     quantity: 1,
-    unitPrice: CATALOG[0].basePrice,
+    unitPrice: CATALOG[0].unitPrice ?? 0,
   })
 
   const onProduct = (productId: string) => {
     const p = getProduct(productId)
-    setForm((f) => ({ ...f, productId, unitPrice: p?.basePrice ?? f.unitPrice }))
+    // Pending products have no sourced price yet — default to 0 so the rep
+    // enters the quoted price for this job.
+    setForm((f) => ({ ...f, productId, unitPrice: p?.unitPrice ?? 0 }))
   }
 
   const submit = () => {
@@ -383,7 +386,7 @@ function ProductBuilder({ onAdd }: { onAdd: (item: Omit<WindowItem, 'id'>) => vo
           <select className="field" value={form.productId} onChange={(e) => onProduct(e.target.value)}>
             {CATALOG.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.brand} {p.series} — {currency(p.basePrice)}
+                {p.brand} {p.series} — {formatPrice(p.unitPrice)}
               </option>
             ))}
           </select>

@@ -3,6 +3,10 @@ import type { Estimate } from '../types'
 export const currency = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 
+/** Currency, or "Pending" when the price hasn't been sourced yet. */
+export const formatPrice = (n: number | null | undefined) =>
+  n == null ? 'Pending' : currency(n)
+
 export const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-US', {
     month: 'short',
