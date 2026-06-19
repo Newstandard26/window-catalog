@@ -9,7 +9,8 @@ import {
 } from 'react'
 import type { Client, Estimate, EstimateStatus, WindowItem } from '../types'
 import { SEED_CLIENTS, SEED_ESTIMATES } from './seed'
-import { estimateTotal } from '../lib/format'
+import { estimateSubtotal, estimateTotal } from '../lib/format'
+import { getClientStats } from '../lib/stats'
 
 const STORAGE_KEY = 'nsr-window-catalog:v1'
 
@@ -18,10 +19,25 @@ interface PersistShape {
   estimates: Estimate[]
 }
 
+/**
+ * Fix 1: a "junk" estimate is one with no windows, a $0 total, and no client —
+ * the empty drafts the old Estimator created on open. Prune them on load so
+ * existing data is cleaned up.
+ */
+export function isJunkEstimate(e: Estimate): boolean {
+  return e.items.length === 0 && estimateSubtotal(e) === 0 && !e.clientId
+}
+
 function load(): PersistShape {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw) as PersistShape
+    if (raw) {
+      const parsed = JSON.parse(raw) as PersistShape
+      return {
+        clients: parsed.clients ?? [],
+        estimates: (parsed.estimates ?? []).filter((e) => !isJunkEstimate(e)),
+      }
+    }
   } catch {
     /* ignore corrupt storage */
   }
@@ -41,6 +57,7 @@ interface StoreValue {
   updateClient: (id: string, patch: Partial<Client>) => void
   addEstimate: (data: Omit<Estimate, 'id' | 'createdAt' | 'updatedAt'>) => Estimate
   updateEstimate: (id: string, patch: Partial<Estimate>) => void
+  removeEstimate: (id: string) => void
   setEstimateStatus: (id: string, status: EstimateStatus) => void
   addWindowItem: (estimateId: string, item: Omit<WindowItem, 'id'>) => void
   updateWindowItem: (estimateId: string, itemId: string, patch: Partial<WindowItem>) => void
@@ -98,6 +115,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
+  const removeEstimate: StoreValue['removeEstimate'] = useCallback((id) => {
+    setEstimates((prev) => prev.filter((e) => e.id !== id))
+  }, [])
+
   const setEstimateStatus: StoreValue['setEstimateStatus'] = useCallback((id, status) => {
     setEstimates((prev) =>
       prev.map((e) => (e.id === id ? { ...e, status, updatedAt: new Date().toISOString() } : e)),
@@ -145,6 +166,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateClient,
     addEstimate,
     updateEstimate,
+    removeEstimate,
     setEstimateStatus,
     addWindowItem,
     updateWindowItem,
@@ -185,12 +207,15 @@ export function useMetrics() {
       .filter((e) => e.status !== 'Lost')
       .reduce((s, e) => s + estimateTotal(e), 0)
 
+    // Task 4: client counts come from one shared selector.
+    const clientStats = getClientStats(clients)
+
     return {
       wonRevenue,
       wonThisMonth,
       pipelineValue,
-      activeClients: clients.filter((c) => c.status === 'Active').length,
-      prospects: clients.filter((c) => c.status === 'Prospect').length,
+      activeClients: clientStats.active,
+      prospects: clientStats.prospects,
       pendingCount: estimates.filter((e) => e.status === 'Pending' || e.status === 'Sent').length,
     }
   }, [clients, estimates])

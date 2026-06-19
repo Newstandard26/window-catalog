@@ -67,24 +67,29 @@ export function CRM() {
                   </div>
 
                   {/* Contact */}
-                  <div className="text-sm md:col-span-3">
-                    <div className="text-slate-700">{client.email}</div>
+                  <div className="min-w-0 text-sm md:col-span-2">
+                    <div className="truncate text-slate-700">{client.email}</div>
                     <div className="text-slate-500">{client.phone}</div>
                   </div>
 
-                  {/* Estimate totals */}
-                  <div className="grid grid-cols-3 gap-4 md:col-span-3">
-                    <div>
+                  {/* Estimate totals — Task 3: fixed-width, right-aligned, tabular
+                      numerals with a clear gap so Open/Won never collide. */}
+                  <div className="grid grid-cols-3 gap-x-6 md:col-span-4">
+                    <div className="min-w-[3.5rem] text-right">
                       <div className="text-xs uppercase tracking-wide text-slate-400">Estimates</div>
-                      <div className="text-lg font-semibold text-slate-900">{ests.length}</div>
+                      <div className="text-lg font-semibold tabular-nums text-slate-900">{ests.length}</div>
                     </div>
-                    <div>
+                    <div className="min-w-[6.5rem] text-right">
                       <div className="text-xs uppercase tracking-wide text-slate-400">Open</div>
-                      <div className="text-lg font-semibold text-slate-900">{currency(openTotal)}</div>
+                      <div className="whitespace-nowrap text-lg font-semibold tabular-nums text-slate-900">
+                        {currency(openTotal)}
+                      </div>
                     </div>
-                    <div>
+                    <div className="min-w-[6.5rem] text-right">
                       <div className="text-xs uppercase tracking-wide text-slate-400">Won</div>
-                      <div className="text-lg font-semibold text-emerald-700">{currency(wonTotal)}</div>
+                      <div className="whitespace-nowrap text-lg font-semibold tabular-nums text-emerald-700">
+                        {currency(wonTotal)}
+                      </div>
                     </div>
                   </div>
 

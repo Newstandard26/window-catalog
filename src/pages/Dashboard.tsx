@@ -15,6 +15,8 @@ export function Dashboard() {
   const recent = useMemo(
     () =>
       [...estimates]
+        // Task 6: skip estimates with no client and no windows.
+        .filter((e) => e.clientId || e.items.length > 0)
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
         .slice(0, 6),
     [estimates],

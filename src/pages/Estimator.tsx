@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useState } from 'react'
+import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
 import { Container } from '../components/Container'
 import { PageHeader } from '../components/PageHeader'
 import { StatusBadge } from '../components/StatusBadge'
@@ -15,64 +15,88 @@ import {
 } from '../lib/format'
 import { PIPELINE, type Estimate, type EstimateStatus, type WindowItem } from '../types'
 
-export function Estimator() {
-  const { id } = useParams()
-  const [params] = useSearchParams()
-  const navigate = useNavigate()
-  const { clients, getClient, getEstimate, addEstimate, updateEstimate } = useStore()
-  const createdRef = useRef(false)
-
-  // Create a fresh estimate when arriving without one (optionally pre-filled
-  // from a CRM client via ?clientId=). Phase 5 auto-naming applies.
-  useEffect(() => {
-    if (id || createdRef.current) return
-    createdRef.current = true
-    const clientId = params.get('clientId') ?? ''
-    const client = clientId ? getClient(clientId) : undefined
-    const created = addEstimate({
-      name: autoEstimateName(client?.name ?? 'New Client', client?.address ?? ''),
-      clientId,
-      address: client?.address ?? '',
-      status: 'Draft',
-      taxRate: 0.0825,
-      items: [],
-    })
-    navigate(`/estimator/${created.id}`, { replace: true })
-  }, [id, params, addEstimate, getClient, navigate])
-
-  const estimate = id ? getEstimate(id) : undefined
-
-  if (!estimate) {
-    return (
-      <Container className="py-20 text-center text-slate-500">Preparing estimate…</Container>
-    )
-  }
-
-  return <EstimatorEditor key={estimate.id} estimate={estimate} clients={clients} update={updateEstimate} />
+// A representative "captured" window the AI import tools add (demo).
+const SAMPLE_IMPORT: Omit<WindowItem, 'id'> = {
+  location: 'Imported — Front Elevation',
+  width: 36,
+  height: 60,
+  productId: CATALOG[0].id,
+  quantity: 3,
+  unitPrice: CATALOG[0].basePrice,
 }
 
-function EstimatorEditor({
-  estimate,
-  clients,
-  update,
-}: {
-  estimate: Estimate
-  clients: ReturnType<typeof useStore>['clients']
-  update: ReturnType<typeof useStore>['updateEstimate']
-}) {
-  const { addWindowItem, removeWindowItem, updateWindowItem } = useStore()
-  // Collapsed by default once at least one item exists (Phase 4).
-  const [toolsOpen, setToolsOpen] = useState(estimate.items.length === 0)
+export function Estimator() {
+  const { id } = useParams()
+  const { getEstimate } = useStore()
+  const existing = id ? getEstimate(id) : undefined
 
-  const client = clients.find((c) => c.id === estimate.clientId)
+  if (id && existing) return <PersistedEstimator key={existing.id} estimate={existing} />
+  if (id && !existing) {
+    return (
+      <Container className="py-20 text-center">
+        <p className="text-lg text-slate-600">This estimate no longer exists.</p>
+        <Link to="/projects" className="btn-secondary mt-4 inline-flex">
+          Back to Projects
+        </Link>
+      </Container>
+    )
+  }
+  // Fix 1: a fresh estimate is held in local state only — nothing is persisted
+  // until the first window is added or the user clicks Save.
+  return <DraftEstimator />
+}
+
+/* ----------------------------- New (unsaved) draft ----------------------------- */
+
+function DraftEstimator() {
+  const [params] = useSearchParams()
+  const navigate = useNavigate()
+  const { clients, getClient, addEstimate, newId } = useStore()
+
+  const initialClientId = params.get('clientId') ?? ''
+  const initialClient = initialClientId ? getClient(initialClientId) : undefined
+
+  const [draft, setDraft] = useState(() => ({
+    name: autoEstimateName(initialClient?.name ?? 'New Client', initialClient?.address ?? ''),
+    clientId: initialClientId,
+    address: initialClient?.address ?? '',
+    status: 'Draft' as EstimateStatus,
+    taxRate: 0.0825,
+    nameEdited: false,
+  }))
+
+  const view: Estimate = {
+    id: 'draft',
+    name: draft.name,
+    clientId: draft.clientId,
+    address: draft.address,
+    status: draft.status,
+    items: [],
+    taxRate: draft.taxRate,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+
+  const persist = (items: Omit<WindowItem, 'id'>[]) => {
+    const created = addEstimate({
+      name: draft.name,
+      clientId: draft.clientId,
+      address: draft.address,
+      status: draft.status,
+      taxRate: draft.taxRate,
+      items: items.map((it) => ({ ...it, id: newId('w') })),
+    })
+    navigate(`/estimator/${created.id}`, { replace: true })
+  }
 
   const onClientChange = (clientId: string) => {
     const c = clients.find((x) => x.id === clientId)
-    update(estimate.id, {
+    setDraft((d) => ({
+      ...d,
       clientId,
-      address: c?.address ?? estimate.address,
-      name: autoEstimateName(c?.name ?? 'New Client', c?.address ?? estimate.address, new Date(estimate.createdAt)),
-    })
+      address: c?.address ?? d.address,
+      name: d.nameEdited ? d.name : autoEstimateName(c?.name ?? 'New Client', c?.address ?? ''),
+    }))
   }
 
   return (
@@ -80,94 +104,220 @@ function EstimatorEditor({
       <PageHeader
         title="Estimator"
         subtitle="Build a window schedule with live pricing."
-        actions={<StatusBadge status={estimate.status} className="text-base" />}
+        actions={
+          <>
+            <button className="btn-secondary" onClick={() => navigate('/projects')}>
+              Discard
+            </button>
+            <button className="btn-primary" onClick={() => persist([])}>
+              Save draft
+            </button>
+          </>
+        }
       />
-
       <Container className="py-8">
-        {/* Estimate meta */}
-        <div className="nsr-card mb-6 p-6">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
-            <div className="md:col-span-6">
-              <label className="field-label">Estimate name</label>
-              <input
-                className="field text-lg font-semibold"
-                value={estimate.name}
-                onChange={(e) => update(estimate.id, { name: e.target.value })}
-              />
-            </div>
-            <div className="md:col-span-3">
-              <label className="field-label">Client</label>
-              <select className="field" value={estimate.clientId} onChange={(e) => onClientChange(e.target.value)}>
-                <option value="">Unassigned</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="md:col-span-3">
-              <label className="field-label">Status</label>
-              <select
-                className="field"
-                value={estimate.status}
-                onChange={(e) => update(estimate.id, { status: e.target.value as EstimateStatus })}
-              >
-                {PIPELINE.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {client && (
-            <p className="mt-3 text-sm text-slate-500">
-              {client.email} · {client.phone} · {estimate.address}
-            </p>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          {/* LEFT: product builder + collapsible Add items tools */}
-          <div className="space-y-6 lg:col-span-4">
-            <ProductBuilder onAdd={(item) => addWindowItem(estimate.id, item)} />
-            <AddItemsTools
-              open={toolsOpen}
-              onToggle={() => setToolsOpen((v) => !v)}
-              onImportSample={() => {
-                addWindowItem(estimate.id, {
-                  location: 'Imported — Front Elevation',
-                  width: 36,
-                  height: 60,
-                  productId: 'pella-250',
-                  quantity: 3,
-                  unitPrice: 845,
-                })
-                setToolsOpen(false)
-              }}
-            />
-          </div>
-
-          {/* CENTER: Window Schedule — the visual focus */}
-          <div className="lg:col-span-5">
-            <WindowSchedule
-              estimate={estimate}
-              onUpdateItem={(itemId, patch) => updateWindowItem(estimate.id, itemId, patch)}
-              onRemove={(itemId) => removeWindowItem(estimate.id, itemId)}
-            />
-          </div>
-
-          {/* RIGHT: live Estimate Summary */}
-          <div className="lg:col-span-3">
-            <EstimateSummary
-              estimate={estimate}
-              onTaxChange={(taxRate) => update(estimate.id, { taxRate })}
-            />
-          </div>
-        </div>
+        <MetaBar
+          estimate={view}
+          clients={clients}
+          onName={(name) => setDraft((d) => ({ ...d, name, nameEdited: true }))}
+          onClient={onClientChange}
+          onStatus={(status) => setDraft((d) => ({ ...d, status }))}
+        />
+        <p className="-mt-3 mb-6 text-sm text-slate-500">
+          This draft isn’t saved yet — it’s added to Projects when you add a window or click{' '}
+          <span className="font-semibold text-slate-600">Save draft</span>.
+        </p>
+        <EstimatorBody
+          estimate={view}
+          toolsOpenDefault
+          onAddItem={(item) => persist([item])}
+          onImportSample={() => persist([SAMPLE_IMPORT])}
+          onUpdateItem={() => {}}
+          onRemoveItem={() => {}}
+          onTaxChange={(taxRate) => setDraft((d) => ({ ...d, taxRate }))}
+        />
       </Container>
     </>
+  )
+}
+
+/* ------------------------------ Saved estimate ------------------------------ */
+
+function PersistedEstimator({ estimate }: { estimate: Estimate }) {
+  const navigate = useNavigate()
+  const {
+    clients,
+    updateEstimate,
+    removeEstimate,
+    addWindowItem,
+    updateWindowItem,
+    removeWindowItem,
+  } = useStore()
+
+  const onClientChange = (clientId: string) => {
+    const c = clients.find((x) => x.id === clientId)
+    updateEstimate(estimate.id, {
+      clientId,
+      address: c?.address ?? estimate.address,
+      name: autoEstimateName(
+        c?.name ?? 'New Client',
+        c?.address ?? estimate.address,
+        new Date(estimate.createdAt),
+      ),
+    })
+  }
+
+  const onDelete = () => {
+    if (window.confirm("Delete this estimate? This can't be undone.")) {
+      removeEstimate(estimate.id)
+      navigate('/projects')
+    }
+  }
+
+  return (
+    <>
+      <PageHeader
+        title="Estimator"
+        subtitle="Build a window schedule with live pricing."
+        actions={
+          <>
+            <StatusBadge status={estimate.status} className="text-base" />
+            <button className="btn-secondary" onClick={onDelete}>
+              Delete
+            </button>
+          </>
+        }
+      />
+      <Container className="py-8">
+        <MetaBar
+          estimate={estimate}
+          clients={clients}
+          onName={(name) => updateEstimate(estimate.id, { name })}
+          onClient={onClientChange}
+          onStatus={(status) => updateEstimate(estimate.id, { status })}
+        />
+        <EstimatorBody
+          estimate={estimate}
+          toolsOpenDefault={estimate.items.length === 0}
+          onAddItem={(item) => addWindowItem(estimate.id, item)}
+          onImportSample={() => addWindowItem(estimate.id, SAMPLE_IMPORT)}
+          onUpdateItem={(itemId, patch) => updateWindowItem(estimate.id, itemId, patch)}
+          onRemoveItem={(itemId) => removeWindowItem(estimate.id, itemId)}
+          onTaxChange={(taxRate) => updateEstimate(estimate.id, { taxRate })}
+        />
+      </Container>
+    </>
+  )
+}
+
+/* -------------------------------- Shared UI -------------------------------- */
+
+function MetaBar({
+  estimate,
+  clients,
+  onName,
+  onClient,
+  onStatus,
+}: {
+  estimate: Estimate
+  clients: ReturnType<typeof useStore>['clients']
+  onName: (name: string) => void
+  onClient: (clientId: string) => void
+  onStatus: (status: EstimateStatus) => void
+}) {
+  const client = clients.find((c) => c.id === estimate.clientId)
+  return (
+    <div className="nsr-card mb-6 p-6">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+        <div className="md:col-span-6">
+          <label className="field-label">Estimate name</label>
+          <input
+            className="field text-lg font-semibold"
+            value={estimate.name}
+            onChange={(e) => onName(e.target.value)}
+          />
+        </div>
+        <div className="md:col-span-3">
+          <label className="field-label">Client</label>
+          <select className="field" value={estimate.clientId} onChange={(e) => onClient(e.target.value)}>
+            <option value="">Unassigned</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="md:col-span-3">
+          <label className="field-label">Status</label>
+          <select
+            className="field"
+            value={estimate.status}
+            onChange={(e) => onStatus(e.target.value as EstimateStatus)}
+          >
+            {PIPELINE.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      {client && (
+        <p className="mt-3 text-sm text-slate-500">
+          {client.email} · {client.phone} · {estimate.address}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function EstimatorBody({
+  estimate,
+  toolsOpenDefault,
+  onAddItem,
+  onImportSample,
+  onUpdateItem,
+  onRemoveItem,
+  onTaxChange,
+}: {
+  estimate: Estimate
+  toolsOpenDefault: boolean
+  onAddItem: (item: Omit<WindowItem, 'id'>) => void
+  onImportSample: () => void
+  onUpdateItem: (itemId: string, patch: Partial<WindowItem>) => void
+  onRemoveItem: (itemId: string) => void
+  onTaxChange: (rate: number) => void
+}) {
+  const [toolsOpen, setToolsOpen] = useState(toolsOpenDefault)
+
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      <div className="space-y-6 lg:col-span-4">
+        <ProductBuilder
+          onAdd={(item) => {
+            onAddItem(item)
+            setToolsOpen(false)
+          }}
+        />
+        <AddItemsTools
+          open={toolsOpen}
+          onToggle={() => setToolsOpen((v) => !v)}
+          onImportSample={() => {
+            onImportSample()
+            setToolsOpen(false)
+          }}
+        />
+      </div>
+
+      <div className="lg:col-span-5">
+        <WindowSchedule estimate={estimate} onUpdateItem={onUpdateItem} onRemove={onRemoveItem} />
+      </div>
+
+      <div className="lg:col-span-3">
+        <EstimateSummary estimate={estimate} onTaxChange={onTaxChange} />
+      </div>
+    </div>
   )
 }
 
@@ -187,7 +337,9 @@ function ProductBuilder({ onAdd }: { onAdd: (item: Omit<WindowItem, 'id'>) => vo
   }
 
   const submit = () => {
-    onAdd({ ...form })
+    // Fix 6: location is optional now — the button stays fully active rather
+    // than reading as faded/disabled. Fall back to a sensible default label.
+    onAdd({ ...form, location: form.location.trim() || 'New Window' })
     setForm((f) => ({ ...f, location: '', quantity: 1 }))
   }
 
@@ -257,7 +409,7 @@ function ProductBuilder({ onAdd }: { onAdd: (item: Omit<WindowItem, 'id'>) => vo
             />
           </div>
         </div>
-        <button className="btn-primary w-full" onClick={submit} disabled={!form.location.trim()}>
+        <button className="btn-primary w-full" onClick={submit}>
           + Add to schedule
         </button>
       </div>
@@ -423,9 +575,11 @@ function EstimateSummary({
   estimate: Estimate
   onTaxChange: (rate: number) => void
 }) {
-  const subtotal = useMemo(() => estimateSubtotal(estimate), [estimate])
-  const tax = useMemo(() => estimateTax(estimate), [estimate])
-  const total = useMemo(() => estimateTotal(estimate), [estimate])
+  const subtotal = estimateSubtotal(estimate)
+  const tax = estimateTax(estimate)
+  const total = estimateTotal(estimate)
+  // Fix 6: show the tax rate as a percentage while storing the decimal.
+  const taxPercent = Number((estimate.taxRate * 100).toFixed(3))
 
   return (
     <div className="nsr-card sticky top-20 p-6">
@@ -434,31 +588,37 @@ function EstimateSummary({
       <dl className="mt-5 space-y-4 text-base">
         <div className="flex items-center justify-between">
           <dt className="text-slate-500">Windows</dt>
-          <dd className="font-semibold text-slate-900">{totalWindowCount(estimate)}</dd>
+          <dd className="font-semibold tabular-nums text-slate-900">{totalWindowCount(estimate)}</dd>
         </div>
         <div className="flex items-center justify-between">
           <dt className="text-slate-500">Subtotal</dt>
-          <dd className="font-semibold text-slate-900">{currency(subtotal)}</dd>
+          <dd className="font-semibold tabular-nums text-slate-900">{currency(subtotal)}</dd>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <dt className="text-slate-500">
+          <dt className="flex items-center gap-2 text-slate-500">
             Tax
-            <input
-              type="number"
-              step={0.0025}
-              className="ml-2 w-20 rounded border border-slate-300 px-2 py-1 text-sm"
-              value={estimate.taxRate}
-              onChange={(e) => onTaxChange(Number(e.target.value))}
-            />
+            <span className="relative">
+              <input
+                type="number"
+                step={0.125}
+                min={0}
+                className="w-20 rounded border border-slate-300 py-1 pl-2 pr-6 text-sm"
+                value={taxPercent}
+                onChange={(e) => onTaxChange(Number(e.target.value) / 100)}
+              />
+              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                %
+              </span>
+            </span>
           </dt>
-          <dd className="font-semibold text-slate-900">{currency(tax)}</dd>
+          <dd className="font-semibold tabular-nums text-slate-900">{currency(tax)}</dd>
         </div>
       </dl>
 
       <div className="mt-5 border-t border-slate-200 pt-5">
         <div className="flex items-baseline justify-between">
           <span className="text-base font-medium text-slate-500">Total</span>
-          <span className="text-3xl font-bold text-brand-700">{currency(total)}</span>
+          <span className="text-3xl font-bold tabular-nums text-brand-700">{currency(total)}</span>
         </div>
       </div>
 

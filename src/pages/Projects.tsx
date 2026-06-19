@@ -8,7 +8,13 @@ import { currency, estimateTotal, shortDate, totalWindowCount } from '../lib/for
 import { PIPELINE, type EstimateStatus } from '../types'
 
 export function Projects() {
-  const { estimates, getClient, setEstimateStatus } = useStore()
+  const { estimates, getClient, setEstimateStatus, removeEstimate } = useStore()
+
+  const onDelete = (id: string, name: string) => {
+    if (window.confirm(`Delete "${name}"? This can't be undone.`)) {
+      removeEstimate(id)
+    }
+  }
 
   // Phase 5: the pipeline counts/totals come straight from each estimate's status.
   const byStage = useMemo(() => {
@@ -88,7 +94,7 @@ export function Projects() {
                   <div className="text-lg font-bold text-slate-900 md:col-span-2">
                     {currency(estimateTotal(e))}
                   </div>
-                  <div className="md:col-span-3 md:flex md:justify-end">
+                  <div className="flex items-center gap-2 md:col-span-3 md:justify-end">
                     {/* Set the real status — drives Projects + CRM Won Revenue */}
                     <select
                       className="field max-w-[10rem]"
@@ -103,6 +109,16 @@ export function Projects() {
                         </option>
                       ))}
                     </select>
+                    <button
+                      className="rounded-lg border border-slate-300 p-2.5 text-slate-400 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600"
+                      title="Delete estimate"
+                      aria-label={`Delete ${e.name}`}
+                      onClick={() => onDelete(e.id, e.name)}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m2 0v14a1 1 0 01-1 1H7a1 1 0 01-1-1V6h12zM10 11v6M14 11v6" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
               </div>
