@@ -19,13 +19,21 @@ import {
   shortDate,
   totalWindowCount,
 } from '../lib/format'
-import { isDocusignConfigured } from '../lib/sign'
+import {
+  buildProposalPayload,
+  getSigningStatus,
+  isDocusignConfigured,
+  sendViaDocusign,
+  type SignMode,
+} from '../lib/sign'
 import {
   PIPELINE,
+  type Client,
   type Estimate,
   type EstimateStatus,
   type LineKind,
   type MarginMode,
+  type SignatureRecord,
   type WindowItem,
 } from '../types'
 
@@ -173,10 +181,12 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
     removeEstimate,
     setEstimateMargin,
     sendForSignature,
+    recordSignature,
     addWindowItem,
     updateWindowItem,
     removeWindowItem,
   } = useStore()
+  const client = clients.find((c) => c.id === estimate.clientId)
   const [signOpen, setSignOpen] = useState(false)
   const [token, setToken] = useState<string | null>(estimate.signatureToken ?? null)
 
@@ -232,7 +242,21 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
         }
       />
       {signOpen && token && (
-        <SignLinkModal estimate={estimate} token={token} onClose={() => setSignOpen(false)} />
+        <SignLinkModal
+          estimate={estimate}
+          client={client}
+          token={token}
+          onClose={() => setSignOpen(false)}
+          onSigned={(signerName, signatureImage) =>
+            recordSignature(token, {
+              signerName,
+              signedAt: new Date().toISOString(),
+              method: 'docusign',
+              signatureImage,
+              accepted: true,
+            } satisfies SignatureRecord)
+          }
+        />
       )}
       <Container className="py-8">
         <MetaBar
@@ -862,6 +886,185 @@ function Row({
 
 function SignLinkModal({
   estimate,
+  client,
+  token,
+  onClose,
+  onSigned,
+}: {
+  estimate: Estimate
+  client?: Client
+  token: string
+  onClose: () => void
+  onSigned: (signerName: string, signatureImage?: string) => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+      <div className="nsr-card w-full max-w-lg p-6">
+        {isDocusignConfigured() ? (
+          <DocusignPanel estimate={estimate} client={client} onClose={onClose} onSigned={onSigned} />
+        ) : (
+          <BuiltinLinkPanel estimate={estimate} token={token} onClose={onClose} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DocusignPanel({
+  estimate,
+  client,
+  onClose,
+  onSigned,
+}: {
+  estimate: Estimate
+  client?: Client
+  onClose: () => void
+  onSigned: (signerName: string, signatureImage?: string) => void
+}) {
+  const [name, setName] = useState(client?.name ?? '')
+  const [email, setEmail] = useState(client?.email ?? '')
+  const [mode, setMode] = useState<SignMode>('email')
+  const [phase, setPhase] = useState<'form' | 'sending' | 'sent' | 'checking'>('form')
+  const [error, setError] = useState('')
+  const [signingUrl, setSigningUrl] = useState<string | undefined>()
+  const [statusText, setStatusText] = useState('')
+
+  const canSend = name.trim().length > 1 && /.+@.+\..+/.test(email)
+
+  const send = async () => {
+    setError('')
+    setPhase('sending')
+    try {
+      const payload = buildProposalPayload(
+        estimate,
+        client,
+        { name: name.trim(), email: email.trim() },
+        mode,
+        window.location.href,
+      )
+      const res = await sendViaDocusign(payload)
+      setSigningUrl(res.signingUrl)
+      setPhase('sent')
+      if (mode === 'embedded' && res.signingUrl) window.open(res.signingUrl, '_blank', 'noopener')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to send envelope')
+      setPhase('form')
+    }
+  }
+
+  const checkStatus = async () => {
+    setError('')
+    setPhase('checking')
+    try {
+      const s = await getSigningStatus(estimate.id)
+      if (s.status === 'completed') {
+        onSigned(s.signerName || name.trim())
+        return // estimate locks; modal unmounts
+      }
+      setStatusText(s.status === 'none' ? 'No envelope found yet.' : `Status: ${s.status}`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Status check failed')
+    } finally {
+      setPhase('sent')
+    }
+  }
+
+  return (
+    <>
+      <h3 className="text-xl font-bold text-slate-900">Send via DocuSign</h3>
+      <p className="mt-1 text-sm text-slate-500">
+        A branded proposal PDF is generated and sent to the client for a legally binding e-signature.
+      </p>
+
+      <div className="mt-4 space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="field-label">Signer name</label>
+            <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Client name" />
+          </div>
+          <div>
+            <label className="field-label">Signer email</label>
+            <input className="field" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="client@email.com" />
+          </div>
+        </div>
+
+        <div>
+          <label className="field-label">Delivery</label>
+          <div className="grid grid-cols-2 gap-2">
+            <ModeOption active={mode === 'email'} onClick={() => setMode('email')} title="Email the client" desc="DocuSign emails a signing link" />
+            <ModeOption active={mode === 'embedded'} onClick={() => setMode('embedded')} title="Sign in person" desc="Opens the signing window now" />
+          </div>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>
+      )}
+
+      {phase === 'sent' && (
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3.5 text-sm text-emerald-800">
+          {mode === 'email' ? (
+            <>Envelope sent — {email} will receive a DocuSign email to sign.</>
+          ) : (
+            <>Signing window opened. Complete the signature, then check status to lock the estimate.</>
+          )}
+          {signingUrl && mode === 'embedded' && (
+            <>
+              {' '}
+              <a className="font-semibold underline" href={signingUrl} target="_blank" rel="noreferrer">
+                Re-open signing window
+              </a>
+            </>
+          )}
+          {statusText && <div className="mt-1 font-medium">{statusText}</div>}
+        </div>
+      )}
+
+      <div className="mt-5 flex justify-end gap-3">
+        <button className="btn-secondary" onClick={onClose}>
+          Close
+        </button>
+        {phase === 'sent' ? (
+          <button className="btn-primary" onClick={checkStatus}>
+            Check signature status
+          </button>
+        ) : (
+          <button className="btn-primary" disabled={!canSend || phase !== 'form'} onClick={send}>
+            {phase === 'sending' ? 'Sending…' : 'Send via DocuSign'}
+          </button>
+        )}
+      </div>
+    </>
+  )
+}
+
+function ModeOption({
+  active,
+  onClick,
+  title,
+  desc,
+}: {
+  active: boolean
+  onClick: () => void
+  title: string
+  desc: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg border p-3 text-left text-sm transition ${
+        active ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-slate-200 hover:border-slate-300'
+      }`}
+    >
+      <div className="font-semibold text-slate-900">{title}</div>
+      <div className="mt-0.5 text-xs text-slate-500">{desc}</div>
+    </button>
+  )
+}
+
+function BuiltinLinkPanel({
+  estimate,
   token,
   onClose,
 }: {
@@ -871,7 +1074,6 @@ function SignLinkModal({
 }) {
   const [copied, setCopied] = useState(false)
   const link = `${window.location.origin}/sign/${token}`
-  const configured = isDocusignConfigured()
 
   const copy = async () => {
     try {
@@ -884,49 +1086,35 @@ function SignLinkModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-      <div className="nsr-card w-full max-w-lg p-6">
-        <h3 className="text-xl font-bold text-slate-900">Send for signature</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          Share this secure link with {estimate.name.split(' — ')[0] || 'the client'} to review and
-          e-sign the proposal.
-        </p>
+    <>
+      <h3 className="text-xl font-bold text-slate-900">Send for signature</h3>
+      <p className="mt-1 text-sm text-slate-500">
+        Share this secure link with {estimate.name.split(' — ')[0] || 'the client'} to review and
+        e-sign the proposal.
+      </p>
 
-        <div className="mt-4 flex items-center gap-2">
-          <input className="field text-sm" readOnly value={link} onFocus={(e) => e.currentTarget.select()} />
-          <button className="btn-primary btn-sm shrink-0" onClick={copy}>
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-
-        <div
-          className={`mt-4 rounded-lg border p-3.5 text-sm ${
-            configured
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-              : 'border-amber-200 bg-amber-50 text-amber-800'
-          }`}
-        >
-          {configured ? (
-            <>DocuSign is configured — the client will receive a DocuSign envelope by email.</>
-          ) : (
-            <>
-              <strong>Built-in signing (demo).</strong> DocuSign isn’t configured yet, and this
-              localStorage build resolves the link on this device only. Wiring the signing backend +
-              DocuSign credentials enables real email delivery and cross-device signing.
-            </>
-          )}
-        </div>
-
-        <div className="mt-5 flex justify-end gap-3">
-          <button className="btn-secondary" onClick={onClose}>
-            Close
-          </button>
-          <a className="btn-primary" href={link} target="_blank" rel="noreferrer">
-            Open signing page
-          </a>
-        </div>
+      <div className="mt-4 flex items-center gap-2">
+        <input className="field text-sm" readOnly value={link} onFocus={(e) => e.currentTarget.select()} />
+        <button className="btn-primary btn-sm shrink-0" onClick={copy}>
+          {copied ? 'Copied' : 'Copy'}
+        </button>
       </div>
-    </div>
+
+      <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800">
+        <strong>Built-in signing (demo).</strong> DocuSign isn’t configured yet, and this
+        localStorage build resolves the link on this device only. Set <code>VITE_SIGN_API_URL</code>{' '}
+        to enable real DocuSign email delivery and cross-device signing.
+      </div>
+
+      <div className="mt-5 flex justify-end gap-3">
+        <button className="btn-secondary" onClick={onClose}>
+          Close
+        </button>
+        <a className="btn-primary" href={link} target="_blank" rel="noreferrer">
+          Open signing page
+        </a>
+      </div>
+    </>
   )
 }
 
