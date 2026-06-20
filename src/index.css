@@ -50,3 +50,13 @@
     @apply mb-1.5 block text-sm font-medium text-slate-600;
   }
 }
+
+/* Task 2: print styles for the proposal / Save-as-PDF output. */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  @page {
+    margin: 0.5in;
+  }
+}

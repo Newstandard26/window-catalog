@@ -39,11 +39,9 @@ function migrateEstimate(e: Estimate): Estimate {
     ...e,
     marginMode: e.marginMode ?? 'margin',
     marginPct: e.marginPct ?? 35,
-    crewSize: e.crewSize ?? 0,
-    hours: e.hours ?? 0,
-    hourlyRate: e.hourlyRate ?? 0,
     items: (e.items ?? []).map((it) => ({
       ...it,
+      kind: it.kind ?? 'material',
       unitCost: it.unitCost ?? it.unitPrice,
       priceOverridden: it.priceOverridden ?? true,
     })),

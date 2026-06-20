@@ -54,9 +54,12 @@ export interface CatalogProduct {
 }
 
 export type MarginMode = 'margin' | 'markup'
+export type LineKind = 'material' | 'labor'
 
 export interface WindowItem {
   id: string
+  /** Material windows are taxable; labor lines are not. */
+  kind: LineKind
   location: string
   width: number
   height: number
@@ -82,10 +85,6 @@ export interface Estimate {
   /** Margin vs markup, and the single percentage used to derive sell prices. */
   marginMode: MarginMode
   marginPct: number
-  /** Optional labor block. laborTotal = crewSize * hours * hourlyRate. */
-  crewSize: number
-  hours: number
-  hourlyRate: number
   createdAt: string
   updatedAt: string
 }

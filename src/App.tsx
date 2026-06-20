@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { TopNav } from './components/TopNav'
 import { Dashboard } from './pages/Dashboard'
 import { Catalog } from './pages/Catalog'
@@ -6,9 +6,23 @@ import { Estimator } from './pages/Estimator'
 import { Projects } from './pages/Projects'
 import { CRM } from './pages/CRM'
 import { ClientProfile } from './pages/ClientProfile'
+import { Proposal } from './pages/Proposal'
+
+// The proposal/print page renders standalone (no app nav/footer/chrome).
+export default function App() {
+  const { pathname } = useLocation()
+  if (pathname.startsWith('/proposal/')) {
+    return (
+      <Routes>
+        <Route path="/proposal/:id" element={<Proposal />} />
+      </Routes>
+    )
+  }
+  return <Shell />
+}
 
 // Phase 1: every page renders inside the same shell with the same header.
-export default function App() {
+function Shell() {
   return (
     <div className="flex min-h-screen flex-col">
       <TopNav />

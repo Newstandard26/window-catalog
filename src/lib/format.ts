@@ -31,34 +31,37 @@ export const shortDate = (iso: string) =>
     year: 'numeric',
   })
 
+const sumLines = (e: Estimate, kind: 'material' | 'labor' | 'all', field: 'unitPrice' | 'unitCost') =>
+  e.items.reduce((sum, item) => {
+    if (kind !== 'all' && item.kind !== kind) return sum
+    return sum + (item[field] ?? 0) * item.quantity
+  }, 0)
+
 /** Internal material cost (qty × unit cost). Never shown to clients. */
-export const estimateMaterialCost = (e: Estimate) =>
-  e.items.reduce((sum, item) => sum + (item.unitCost ?? 0) * item.quantity, 0)
+export const estimateMaterialCost = (e: Estimate) => sumLines(e, 'material', 'unitCost')
 
-/** Material sell price (qty × unit price). */
-export const estimateMaterialPrice = (e: Estimate) =>
-  e.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0)
+/** Material sell price (qty × unit price) — the taxable base. */
+export const estimateMaterialPrice = (e: Estimate) => sumLines(e, 'material', 'unitPrice')
 
-/** Gross profit on materials (sell − cost). */
+/** Labor sell total (qty × unit price of labor lines). Not taxable. */
+export const estimateLabor = (e: Estimate) => sumLines(e, 'labor', 'unitPrice')
+
+/** Gross profit = sell − cost across all lines (material + labor). */
 export const estimateProfit = (e: Estimate) =>
-  estimateMaterialPrice(e) - estimateMaterialCost(e)
+  sumLines(e, 'all', 'unitPrice') - sumLines(e, 'all', 'unitCost')
 
-/** Labor total = crew × hours × hourly rate. */
-export const estimateLabor = (e: Estimate) =>
-  (e.crewSize ?? 0) * (e.hours ?? 0) * (e.hourlyRate ?? 0)
+/** Subtotal = every line's sell price (material + labor). */
+export const estimateSubtotal = (e: Estimate) => sumLines(e, 'all', 'unitPrice')
 
-/** Subtotal = material sell price + labor (the taxable base). */
-export const estimateSubtotal = (e: Estimate) =>
-  estimateMaterialPrice(e) + estimateLabor(e)
-
+/** Tax applies to taxable (material) lines only — labor is not taxed. */
 export const estimateTax = (e: Estimate) =>
-  estimateSubtotal(e) * (e.taxRate ?? 0)
+  estimateMaterialPrice(e) * (e.taxRate ?? 0)
 
 export const estimateTotal = (e: Estimate) =>
   estimateSubtotal(e) + estimateTax(e)
 
 export const totalWindowCount = (e: Estimate) =>
-  e.items.reduce((sum, item) => sum + item.quantity, 0)
+  e.items.reduce((sum, item) => (item.kind === 'labor' ? sum : sum + item.quantity), 0)
 
 /**
  * Phase 5: auto-name estimates as "{Client Name} — {Address} — {Date}" so they
