@@ -16,8 +16,10 @@ import {
   estimateSubtotal,
   estimateTax,
   estimateTotal,
+  shortDate,
   totalWindowCount,
 } from '../lib/format'
+import { isDocusignConfigured } from '../lib/sign'
 import {
   PIPELINE,
   type Estimate,
@@ -170,10 +172,22 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
     updateEstimate,
     removeEstimate,
     setEstimateMargin,
+    sendForSignature,
     addWindowItem,
     updateWindowItem,
     removeWindowItem,
   } = useStore()
+  const [signOpen, setSignOpen] = useState(false)
+  const [token, setToken] = useState<string | null>(estimate.signatureToken ?? null)
+
+  // Once signed, the estimate is locked from edits (Task 3).
+  if (estimate.signature) return <LockedEstimate estimate={estimate} />
+
+  const openSend = () => {
+    const t = estimate.signatureToken ?? sendForSignature(estimate.id)
+    setToken(t)
+    setSignOpen(true)
+  }
 
   const onClientChange = (clientId: string) => {
     const c = clients.find((x) => x.id === clientId)
@@ -208,12 +222,18 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
             <Link to={`/proposal/${estimate.id}`} className="btn-secondary">
               Export PDF
             </Link>
+            <button className="btn-primary" onClick={openSend}>
+              Send for signature
+            </button>
             <button className="btn-secondary" onClick={onDelete}>
               Delete
             </button>
           </>
         }
       />
+      {signOpen && token && (
+        <SignLinkModal estimate={estimate} token={token} onClose={() => setSignOpen(false)} />
+      )}
       <Container className="py-8">
         <MetaBar
           estimate={estimate}
@@ -835,5 +855,140 @@ function Row({
       <dt className={muted ? 'text-slate-400' : 'text-slate-500'}>{label}</dt>
       <dd className={`font-semibold tabular-nums ${className || 'text-slate-900'}`}>{value}</dd>
     </div>
+  )
+}
+
+/* ------------------------------ Signature flow ------------------------------ */
+
+function SignLinkModal({
+  estimate,
+  token,
+  onClose,
+}: {
+  estimate: Estimate
+  token: string
+  onClose: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+  const link = `${window.location.origin}/sign/${token}`
+  const configured = isDocusignConfigured()
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+      <div className="nsr-card w-full max-w-lg p-6">
+        <h3 className="text-xl font-bold text-slate-900">Send for signature</h3>
+        <p className="mt-1 text-sm text-slate-500">
+          Share this secure link with {estimate.name.split(' — ')[0] || 'the client'} to review and
+          e-sign the proposal.
+        </p>
+
+        <div className="mt-4 flex items-center gap-2">
+          <input className="field text-sm" readOnly value={link} onFocus={(e) => e.currentTarget.select()} />
+          <button className="btn-primary btn-sm shrink-0" onClick={copy}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+
+        <div
+          className={`mt-4 rounded-lg border p-3.5 text-sm ${
+            configured
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : 'border-amber-200 bg-amber-50 text-amber-800'
+          }`}
+        >
+          {configured ? (
+            <>DocuSign is configured — the client will receive a DocuSign envelope by email.</>
+          ) : (
+            <>
+              <strong>Built-in signing (demo).</strong> DocuSign isn’t configured yet, and this
+              localStorage build resolves the link on this device only. Wiring the signing backend +
+              DocuSign credentials enables real email delivery and cross-device signing.
+            </>
+          )}
+        </div>
+
+        <div className="mt-5 flex justify-end gap-3">
+          <button className="btn-secondary" onClick={onClose}>
+            Close
+          </button>
+          <a className="btn-primary" href={link} target="_blank" rel="noreferrer">
+            Open signing page
+          </a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LockedEstimate({ estimate }: { estimate: Estimate }) {
+  const sig = estimate.signature!
+  return (
+    <>
+      <PageHeader
+        title="Estimator"
+        subtitle="This proposal has been signed and is locked."
+        actions={
+          <>
+            <StatusBadge status={estimate.status} className="text-base" />
+            <Link to={`/proposal/${estimate.id}`} className="btn-secondary">
+              Export PDF
+            </Link>
+          </>
+        }
+      />
+      <Container className="py-8">
+        <div className="nsr-card mb-6 flex items-start gap-3 border-emerald-200 bg-emerald-50 p-6">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Signed &amp; locked</h2>
+            <p className="mt-1 text-slate-700">
+              Signed by <span className="font-semibold">{sig.signerName}</span> on{' '}
+              {shortDate(sig.signedAt)} via {sig.method === 'docusign' ? 'DocuSign' : 'in-app signature'}.
+              {sig.ip && <> · IP {sig.ip}</>}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="nsr-card p-6 lg:col-span-2">
+            <h3 className="text-lg font-bold text-slate-900">{estimate.name}</h3>
+            <p className="mt-1 text-sm text-slate-500">{estimate.address}</p>
+            {sig.signatureImage && (
+              <div className="mt-4">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Signature</div>
+                <img
+                  src={sig.signatureImage}
+                  alt="Client signature"
+                  className="mt-1 h-24 rounded border border-slate-200 bg-white"
+                />
+              </div>
+            )}
+          </div>
+          <div className="nsr-card p-6">
+            <Row label="Subtotal" value={currency(estimateSubtotal(estimate))} />
+            <div className="mt-2">
+              <Row label="Total" value={currency(estimateTotal(estimate))} className="text-brand-700" />
+            </div>
+            <div className="mt-2">
+              <Row label="Est. profit" value={currency(estimateProfit(estimate))} className="text-emerald-700" />
+            </div>
+          </div>
+        </div>
+      </Container>
+    </>
   )
 }

@@ -56,6 +56,19 @@ export interface CatalogProduct {
 export type MarginMode = 'margin' | 'markup'
 export type LineKind = 'material' | 'labor'
 
+/** Captured when a client e-signs a proposal. */
+export interface SignatureRecord {
+  signerName: string
+  signedAt: string
+  /** 'builtin' = in-app signature pad; 'docusign' = provider envelope. */
+  method: 'builtin' | 'docusign'
+  /** Best-effort, when available (needs a backend to capture reliably). */
+  ip?: string
+  /** Data-URL of the drawn signature (built-in pad only). */
+  signatureImage?: string
+  accepted: boolean
+}
+
 export interface WindowItem {
   id: string
   /** Material windows are taxable; labor lines are not. */
@@ -85,6 +98,11 @@ export interface Estimate {
   /** Margin vs markup, and the single percentage used to derive sell prices. */
   marginMode: MarginMode
   marginPct: number
+  /** Unguessable token for the public signing link (set when sent). */
+  signatureToken?: string | null
+  sentForSignatureAt?: string | null
+  /** Present once signed; locks the estimate from further edits. */
+  signature?: SignatureRecord | null
   createdAt: string
   updatedAt: string
 }

@@ -7,7 +7,14 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { Client, Estimate, EstimateStatus, MarginMode, WindowItem } from '../types'
+import type {
+  Client,
+  Estimate,
+  EstimateStatus,
+  MarginMode,
+  SignatureRecord,
+  WindowItem,
+} from '../types'
 import { SEED_CLIENTS, SEED_ESTIMATES } from './seed'
 import { deriveSellPrice, estimateSubtotal, estimateTotal } from '../lib/format'
 import { getClientStats } from '../lib/stats'
@@ -74,6 +81,7 @@ interface StoreValue {
   estimates: Estimate[]
   getClient: (id: string) => Client | undefined
   getEstimate: (id: string) => Estimate | undefined
+  getEstimateByToken: (token: string) => Estimate | undefined
   estimatesForClient: (clientId: string) => Estimate[]
   addClient: (data: Omit<Client, 'id' | 'createdAt'>) => Client
   updateClient: (id: string, patch: Partial<Client>) => void
@@ -81,6 +89,10 @@ interface StoreValue {
   updateEstimate: (id: string, patch: Partial<Estimate>) => void
   removeEstimate: (id: string) => void
   setEstimateStatus: (id: string, status: EstimateStatus) => void
+  /** Generate a signing token + mark the estimate sent. Returns the token. */
+  sendForSignature: (id: string) => string
+  /** Record a completed signature, lock the estimate, advance status to Won. */
+  recordSignature: (token: string, record: SignatureRecord) => void
   /** Update margin mode/pct and recompute every non-overridden line's sell price. */
   setEstimateMargin: (id: string, patch: { marginMode?: MarginMode; marginPct?: number }) => void
   addWindowItem: (estimateId: string, item: Omit<WindowItem, 'id'>) => void
@@ -109,6 +121,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
   const getEstimate = useCallback(
     (id: string) => estimates.find((e) => e.id === id),
+    [estimates],
+  )
+  const getEstimateByToken = useCallback(
+    (token: string) => estimates.find((e) => e.signatureToken && e.signatureToken === token),
     [estimates],
   )
   const estimatesForClient = useCallback(
@@ -166,6 +182,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
+  const sendForSignature: StoreValue['sendForSignature'] = useCallback((id) => {
+    // Unguessable, scoped to one estimate.
+    const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, '')
+    const now = new Date().toISOString()
+    setEstimates((prev) =>
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              signatureToken: token,
+              sentForSignatureAt: now,
+              status: e.status === 'Draft' ? 'Sent' : e.status,
+              updatedAt: now,
+            }
+          : e,
+      ),
+    )
+    return token
+  }, [])
+
+  const recordSignature: StoreValue['recordSignature'] = useCallback((token, record) => {
+    setEstimates((prev) =>
+      prev.map((e) =>
+        e.signatureToken === token && !e.signature
+          ? { ...e, signature: record, status: 'Won', updatedAt: new Date().toISOString() }
+          : e,
+      ),
+    )
+  }, [])
+
   const addWindowItem: StoreValue['addWindowItem'] = useCallback((estimateId, item) => {
     const withId: WindowItem = { ...item, id: uid('w') }
     setEstimates((prev) =>
@@ -202,6 +248,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     estimates,
     getClient,
     getEstimate,
+    getEstimateByToken,
     estimatesForClient,
     addClient,
     updateClient,
@@ -209,6 +256,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateEstimate,
     removeEstimate,
     setEstimateStatus,
+    sendForSignature,
+    recordSignature,
     setEstimateMargin,
     addWindowItem,
     updateWindowItem,

@@ -7,14 +7,16 @@ import { Projects } from './pages/Projects'
 import { CRM } from './pages/CRM'
 import { ClientProfile } from './pages/ClientProfile'
 import { Proposal } from './pages/Proposal'
+import { Sign } from './pages/Sign'
 
-// The proposal/print page renders standalone (no app nav/footer/chrome).
+// The proposal/print and public signing pages render standalone (no app chrome).
 export default function App() {
   const { pathname } = useLocation()
-  if (pathname.startsWith('/proposal/')) {
+  if (pathname.startsWith('/proposal/') || pathname.startsWith('/sign/')) {
     return (
       <Routes>
         <Route path="/proposal/:id" element={<Proposal />} />
+        <Route path="/sign/:token" element={<Sign />} />
       </Routes>
     )
   }
