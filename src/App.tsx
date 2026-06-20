@@ -1,14 +1,19 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import { TopNav } from './components/TopNav'
 import { useDocusignWatcher } from './data/store'
 import { Dashboard } from './pages/Dashboard'
 import { Catalog } from './pages/Catalog'
 import { Estimator } from './pages/Estimator'
 import { Projects } from './pages/Projects'
-import { CRM } from './pages/CRM'
 import { ClientProfile } from './pages/ClientProfile'
 import { Proposal } from './pages/Proposal'
 import { Sign } from './pages/Sign'
+
+// Old CRM client deep-links (/crm/:id) now live under /clients/:id.
+function CrmClientRedirect() {
+  const { clientId } = useParams()
+  return <Navigate to={`/clients/${clientId}`} replace />
+}
 
 // The proposal/print and public signing pages render standalone (no app chrome).
 export default function App() {
@@ -37,8 +42,10 @@ function Shell() {
           <Route path="/estimator" element={<Estimator />} />
           <Route path="/estimator/:id" element={<Estimator />} />
           <Route path="/projects" element={<Projects />} />
-          <Route path="/crm" element={<CRM />} />
-          <Route path="/crm/:clientId" element={<ClientProfile />} />
+          <Route path="/clients/:clientId" element={<ClientProfile />} />
+          {/* Back-compat: CRM merged into Dashboard; keep old links alive. */}
+          <Route path="/crm" element={<Navigate to="/" replace />} />
+          <Route path="/crm/:clientId" element={<CrmClientRedirect />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

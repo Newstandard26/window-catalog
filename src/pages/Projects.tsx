@@ -79,7 +79,7 @@ export function Projects() {
                     </Link>
                     <div className="mt-1 text-sm text-slate-500">
                       {client ? (
-                        <Link to={`/crm/${client.id}`} className="hover:text-brand-700">
+                        <Link to={`/clients/${client.id}`} className="hover:text-brand-700">
                           {client.name}
                         </Link>
                       ) : (
@@ -95,7 +95,7 @@ export function Projects() {
                     {currency(estimateTotal(e))}
                   </div>
                   <div className="flex items-center gap-2 md:col-span-3 md:justify-end">
-                    {/* Set the real status — drives Projects + CRM Won Revenue */}
+                    {/* Set the real status — drives Projects + Dashboard Won Revenue */}
                     <select
                       className="field max-w-[10rem]"
                       value={e.status}

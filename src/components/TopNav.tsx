@@ -7,7 +7,6 @@ const TABS = [
   { to: '/catalog', label: 'Catalog' },
   { to: '/estimator', label: 'Estimator' },
   { to: '/projects', label: 'Projects' },
-  { to: '/crm', label: 'CRM' },
 ]
 
 function Logo() {

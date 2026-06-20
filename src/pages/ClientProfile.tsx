@@ -15,8 +15,8 @@ export function ClientProfile() {
     return (
       <Container className="py-16 text-center">
         <p className="text-lg text-slate-600">Client not found.</p>
-        <Link to="/crm" className="btn-secondary mt-4 inline-flex">
-          Back to CRM
+        <Link to="/" className="btn-secondary mt-4 inline-flex">
+          Back to Dashboard
         </Link>
       </Container>
     )
@@ -34,7 +34,7 @@ export function ClientProfile() {
         subtitle={client.address}
         actions={
           <>
-            <Link to="/crm" className="btn-secondary">
+            <Link to="/" className="btn-secondary">
               ← All Clients
             </Link>
             {/* Phase 5: opens the Estimator with client name, address & contact pre-filled */}

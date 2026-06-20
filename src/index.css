@@ -4,7 +4,7 @@
 
 @layer base {
   html {
-    /* Phase 2: bump the base font size so CRM / Estimator / Projects read larger */
+    /* Phase 2: bump the base font size so Dashboard / Estimator / Projects read larger */
     font-size: 16.5px;
   }
   body {
