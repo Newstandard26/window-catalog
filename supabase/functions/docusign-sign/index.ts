@@ -489,6 +489,51 @@ Deno.serve(async (req) => {
       return json({ ok: true })
     }
 
+    if (route === 'documents' && req.method === 'GET') {
+      const estimateId = url.searchParams.get('estimateId')
+      if (!estimateId) return json({ error: 'estimateId required' }, 400)
+      const { data } = await db
+        .from('signing_envelopes')
+        .select('envelope_id')
+        .eq('estimate_id', estimateId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (!data) return json({ error: 'no envelope for estimate' }, 404)
+      const token = await getAccessToken()
+      const envId = data.envelope_id
+      const base = `${BASE_URI}/restapi/v2.1/accounts/${ACCOUNT_ID}/envelopes/${envId}`
+
+      // Signer name + signed timestamp from the recipient record.
+      let signerName: string | undefined
+      let signedAt: string | undefined
+      try {
+        const rr = await fetch(`${base}/recipients`, { headers: { authorization: `Bearer ${token}` } })
+        if (rr.ok) {
+          const j = await rr.json()
+          const s = j.signers?.[0]
+          signerName = s?.name
+          signedAt = s?.signedDateTime
+        }
+      } catch {
+        /* best effort */
+      }
+
+      const getDoc = async (docId: string): Promise<string | null> => {
+        const r = await fetch(`${base}/documents/${docId}`, {
+          headers: { authorization: `Bearer ${token}`, accept: 'application/pdf' },
+        })
+        if (!r.ok) return null
+        return bytesToB64(new Uint8Array(await r.arrayBuffer()))
+      }
+      // Document "1" is the (now signed) proposal; "certificate" is the audit receipt.
+      const [signed, cert] = await Promise.all([getDoc('1'), getDoc('certificate')])
+      const documents: { name: string; kind: string; mime: string; base64: string }[] = []
+      if (signed) documents.push({ name: 'Signed Proposal.pdf', kind: 'signed', mime: 'application/pdf', base64: signed })
+      if (cert) documents.push({ name: 'Certificate of Completion.pdf', kind: 'certificate', mime: 'application/pdf', base64: cert })
+      return json({ envelopeId: envId, signerName, signedAt, documents })
+    }
+
     return json({ error: 'not found', route }, 404)
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500)

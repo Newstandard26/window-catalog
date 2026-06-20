@@ -69,6 +69,17 @@ export interface SignatureRecord {
   accepted: boolean
 }
 
+/** A document stored on a project (signed proposal, certificate, etc.). */
+export interface SignedFile {
+  id: string
+  name: string
+  kind: 'signed' | 'certificate' | 'other'
+  mime: string
+  /** Inline data URL so files persist with the estimate (no external storage). */
+  dataUrl: string
+  addedAt: string
+}
+
 export interface WindowItem {
   id: string
   /** Material windows are taxable; labor lines are not. */
@@ -103,6 +114,8 @@ export interface Estimate {
   sentForSignatureAt?: string | null
   /** Present once signed; locks the estimate from further edits. */
   signature?: SignatureRecord | null
+  /** Documents attached to the project (signed PDF + certificate after signing). */
+  files?: SignedFile[]
   createdAt: string
   updatedAt: string
 }

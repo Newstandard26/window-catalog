@@ -21,7 +21,7 @@ import {
 } from '../lib/format'
 import {
   buildProposalPayload,
-  getSigningStatus,
+  fetchSignedDocuments,
   isDocusignConfigured,
   sendViaDocusign,
   type SignMode,
@@ -33,7 +33,7 @@ import {
   type EstimateStatus,
   type LineKind,
   type MarginMode,
-  type SignatureRecord,
+  type SignedFile,
   type WindowItem,
 } from '../types'
 
@@ -181,7 +181,6 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
     removeEstimate,
     setEstimateMargin,
     sendForSignature,
-    recordSignature,
     addWindowItem,
     updateWindowItem,
     removeWindowItem,
@@ -247,15 +246,6 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
           client={client}
           token={token}
           onClose={() => setSignOpen(false)}
-          onSigned={(signerName, signatureImage) =>
-            recordSignature(token, {
-              signerName,
-              signedAt: new Date().toISOString(),
-              method: 'docusign',
-              signatureImage,
-              accepted: true,
-            } satisfies SignatureRecord)
-          }
         />
       )}
       <Container className="py-8">
@@ -889,19 +879,17 @@ function SignLinkModal({
   client,
   token,
   onClose,
-  onSigned,
 }: {
   estimate: Estimate
   client?: Client
   token: string
   onClose: () => void
-  onSigned: (signerName: string, signatureImage?: string) => void
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
       <div className="nsr-card w-full max-w-lg p-6">
         {isDocusignConfigured() ? (
-          <DocusignPanel estimate={estimate} client={client} onClose={onClose} onSigned={onSigned} />
+          <DocusignPanel estimate={estimate} client={client} onClose={onClose} />
         ) : (
           <BuiltinLinkPanel estimate={estimate} token={token} onClose={onClose} />
         )}
@@ -914,13 +902,12 @@ function DocusignPanel({
   estimate,
   client,
   onClose,
-  onSigned,
 }: {
   estimate: Estimate
   client?: Client
   onClose: () => void
-  onSigned: (signerName: string, signatureImage?: string) => void
 }) {
+  const { finalizeDocusign } = useStore()
   const [name, setName] = useState(client?.name ?? '')
   const [email, setEmail] = useState(client?.email ?? '')
   const [mode, setMode] = useState<SignMode>('email')
@@ -956,12 +943,11 @@ function DocusignPanel({
     setError('')
     setPhase('checking')
     try {
-      const s = await getSigningStatus(estimate.id)
-      if (s.status === 'completed') {
-        onSigned(s.signerName || name.trim())
-        return // estimate locks; modal unmounts
-      }
-      setStatusText(s.status === 'none' ? 'No envelope found yet.' : `Status: ${s.status}`)
+      const status = await finalizeDocusign(estimate.id)
+      if (status === 'completed') return // estimate locks + files attach; modal unmounts
+      setStatusText(
+        status === 'none' ? 'No envelope found yet.' : `Status: ${status} — not signed yet.`,
+      )
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Status check failed')
     } finally {
@@ -1176,7 +1162,89 @@ function LockedEstimate({ estimate }: { estimate: Estimate }) {
             </div>
           </div>
         </div>
+
+        <ProjectFiles estimate={estimate} />
       </Container>
     </>
+  )
+}
+
+/** Project files: the signed PDF + certificate of completion pulled from DocuSign. */
+function ProjectFiles({ estimate }: { estimate: Estimate }) {
+  const { updateEstimate } = useStore()
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const files = estimate.files ?? []
+
+  const fetchFiles = async () => {
+    setError('')
+    setLoading(true)
+    try {
+      const res = await fetchSignedDocuments(estimate.id)
+      const mapped: SignedFile[] = res.documents.map((d) => ({
+        id: `file-${d.kind}-${Date.now()}`,
+        name: d.name,
+        kind: d.kind,
+        mime: d.mime,
+        dataUrl: `data:${d.mime};base64,${d.base64}`,
+        addedAt: new Date().toISOString(),
+      }))
+      if (mapped.length) updateEstimate(estimate.id, { files: mapped })
+      else setError('No documents available yet.')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not fetch documents')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="nsr-card mt-6 p-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-bold text-slate-900">Files</h3>
+        {isDocusignConfigured() && (
+          <button className="btn-secondary btn-sm" onClick={fetchFiles} disabled={loading}>
+            {loading ? 'Fetching…' : files.length ? 'Refresh' : 'Fetch signed documents'}
+          </button>
+        )}
+      </div>
+
+      {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
+
+      {files.length === 0 ? (
+        <p className="mt-3 text-sm text-slate-500">
+          The signed proposal and certificate of completion appear here once the client signs.
+        </p>
+      ) : (
+        <ul className="mt-4 divide-y divide-slate-100">
+          {files.map((f) => (
+            <li key={f.id} className="flex items-center justify-between py-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-600">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <path d="M14 2v6h6" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">{f.name}</div>
+                  <div className="text-xs text-slate-400">
+                    {f.kind === 'certificate' ? 'Signature receipt' : f.kind === 'signed' ? 'Signed contract' : 'Document'}
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <a className="btn-secondary btn-sm" href={f.dataUrl} target="_blank" rel="noreferrer">
+                  View
+                </a>
+                <a className="btn-primary btn-sm" href={f.dataUrl} download={f.name}>
+                  Download
+                </a>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }

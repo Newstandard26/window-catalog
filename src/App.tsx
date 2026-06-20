@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { TopNav } from './components/TopNav'
+import { useDocusignWatcher } from './data/store'
 import { Dashboard } from './pages/Dashboard'
 import { Catalog } from './pages/Catalog'
 import { Estimator } from './pages/Estimator'
@@ -25,6 +26,7 @@ export default function App() {
 
 // Phase 1: every page renders inside the same shell with the same header.
 function Shell() {
+  useDocusignWatcher()
   return (
     <div className="flex min-h-screen flex-col">
       <TopNav />

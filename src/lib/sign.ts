@@ -172,6 +172,30 @@ export async function getSigningStatus(estimateId: string): Promise<SigningStatu
   return (await res.json()) as SigningStatus
 }
 
+export interface SignedDocument {
+  name: string
+  kind: 'signed' | 'certificate' | 'other'
+  mime: string
+  base64: string
+}
+export interface SignedDocumentsResult {
+  envelopeId: string
+  signerName?: string
+  signedAt?: string
+  documents: SignedDocument[]
+}
+
+/** Fetch the completed PDF + certificate of completion for a signed estimate. */
+export async function fetchSignedDocuments(estimateId: string): Promise<SignedDocumentsResult> {
+  if (!SIGN_API_URL) throw new Error('Signing backend not configured')
+  const res = await fetch(`${SIGN_API_URL}/documents?estimateId=${encodeURIComponent(estimateId)}`, {
+    headers: headers(),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data?.error || `Document fetch failed: ${res.status}`)
+  return data as SignedDocumentsResult
+}
+
 /**
  * Notify NSR that a proposal was signed. With DocuSign, the account owner is
  * the envelope sender and receives DocuSign's own completion email, so this is

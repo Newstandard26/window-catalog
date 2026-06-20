@@ -13,11 +13,13 @@ import type {
   EstimateStatus,
   MarginMode,
   SignatureRecord,
+  SignedFile,
   WindowItem,
 } from '../types'
 import { SEED_CLIENTS, SEED_ESTIMATES } from './seed'
 import { deriveSellPrice, estimateSubtotal, estimateTotal } from '../lib/format'
 import { getClientStats } from '../lib/stats'
+import { fetchSignedDocuments, getSigningStatus, isDocusignConfigured } from '../lib/sign'
 
 const STORAGE_KEY = 'nsr-window-catalog:v1'
 
@@ -93,6 +95,12 @@ interface StoreValue {
   sendForSignature: (id: string) => string
   /** Record a completed signature, lock the estimate, advance status to Won. */
   recordSignature: (token: string, record: SignatureRecord) => void
+  /**
+   * Check DocuSign for an estimate; if completed, pull the signed PDF +
+   * certificate, lock the estimate, attach the files, and advance to Won.
+   * Returns the live status. Safe to call repeatedly (no-op once signed).
+   */
+  finalizeDocusign: (estimateId: string) => Promise<string>
   /** Update margin mode/pct and recompute every non-overridden line's sell price. */
   setEstimateMargin: (id: string, patch: { marginMode?: MarginMode; marginPct?: number }) => void
   addWindowItem: (estimateId: string, item: Omit<WindowItem, 'id'>) => void
@@ -212,6 +220,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
+  const finalizeDocusign: StoreValue['finalizeDocusign'] = useCallback(async (estimateId) => {
+    const status = await getSigningStatus(estimateId)
+    if (status.status !== 'completed') return status.status
+
+    let signerName = status.signerName || 'Client'
+    let signedAt = status.completedAt || new Date().toISOString()
+    let files: SignedFile[] = []
+    try {
+      const res = await fetchSignedDocuments(estimateId)
+      if (res.signerName) signerName = res.signerName
+      if (res.signedAt) signedAt = res.signedAt
+      files = res.documents.map((d) => ({
+        id: uid('file'),
+        name: d.name,
+        kind: d.kind,
+        mime: d.mime,
+        dataUrl: `data:${d.mime};base64,${d.base64}`,
+        addedAt: new Date().toISOString(),
+      }))
+    } catch {
+      /* lock even if the document pull fails; files can be re-fetched later */
+    }
+
+    setEstimates((prev) =>
+      prev.map((e) =>
+        e.id === estimateId && !e.signature
+          ? {
+              ...e,
+              signature: { signerName, signedAt, method: 'docusign', accepted: true },
+              files: files.length ? files : e.files,
+              status: 'Won',
+              updatedAt: new Date().toISOString(),
+            }
+          : e,
+      ),
+    )
+    return 'completed'
+  }, [])
+
   const addWindowItem: StoreValue['addWindowItem'] = useCallback((estimateId, item) => {
     const withId: WindowItem = { ...item, id: uid('w') }
     setEstimates((prev) =>
@@ -258,6 +305,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEstimateStatus,
     sendForSignature,
     recordSignature,
+    finalizeDocusign,
     setEstimateMargin,
     addWindowItem,
     updateWindowItem,
@@ -272,6 +320,44 @@ export function useStore(): StoreValue {
   const ctx = useContext(StoreContext)
   if (!ctx) throw new Error('useStore must be used within StoreProvider')
   return ctx
+}
+
+/**
+ * Background watcher: for any estimate sent to DocuSign but not yet signed,
+ * poll for completion (on mount, on a timer, and on window focus). When signed,
+ * the estimate auto-locks, files attach, and it moves to Won — no manual step.
+ */
+export function useDocusignWatcher() {
+  const { estimates, finalizeDocusign } = useStore()
+  const pendingKey = estimates
+    .filter((e) => e.sentForSignatureAt && !e.signature)
+    .map((e) => e.id)
+    .join(',')
+
+  useEffect(() => {
+    if (!isDocusignConfigured() || !pendingKey) return
+    const ids = pendingKey.split(',')
+    let stopped = false
+    const tick = async () => {
+      for (const id of ids) {
+        if (stopped) break
+        try {
+          await finalizeDocusign(id)
+        } catch {
+          /* transient; retry next tick */
+        }
+      }
+    }
+    tick()
+    const timer = window.setInterval(tick, 15_000)
+    const onFocus = () => tick()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [pendingKey, finalizeDocusign])
 }
 
 /**
