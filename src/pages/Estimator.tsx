@@ -26,6 +26,7 @@ import {
   sendViaDocusign,
   type SignMode,
 } from '../lib/sign'
+import { getActiveClients } from '../lib/stats'
 import {
   PIPELINE,
   type Client,
@@ -285,6 +286,12 @@ function MetaBar({
   onStatus: (status: EstimateStatus) => void
 }) {
   const client = clients.find((c) => c.id === estimate.clientId)
+  // Only non-archived clients are selectable. If this estimate is already tied to
+  // a client who was later archived, keep showing that client so its name doesn't
+  // blank out — but don't offer other archived clients as new selections.
+  const selectable = getActiveClients(clients)
+  const pickerClients =
+    client && client.archived ? [client, ...selectable] : selectable
   return (
     <div className="nsr-card mb-6 p-6">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
@@ -300,9 +307,10 @@ function MetaBar({
           <label className="field-label">Client</label>
           <select className="field" value={estimate.clientId} onChange={(e) => onClient(e.target.value)}>
             <option value="">Unassigned</option>
-            {clients.map((c) => (
+            {pickerClients.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
+                {c.archived ? ' (archived)' : ''}
               </option>
             ))}
           </select>

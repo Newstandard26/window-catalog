@@ -114,7 +114,30 @@ export function Dashboard() {
             <div className="space-y-3">
               {visibleClients.length === 0 && (
                 <div className="nsr-card p-8 text-center text-slate-500">
-                  {clients.length === 0 ? 'No clients yet.' : 'No clients match your search.'}
+                  {clients.length === 0 ? (
+                    'No clients yet. Add one with “+ New Client.”'
+                  ) : query.trim() ? (
+                    <>No clients match “{query.trim()}.”</>
+                  ) : filter === 'Archived' ? (
+                    'No archived clients.'
+                  ) : (
+                    <>
+                      No active clients yet.
+                      {archivedCount > 0 && (
+                        <>
+                          {' '}
+                          {archivedCount} archived —{' '}
+                          <button
+                            className="font-semibold text-brand-700 hover:text-brand-800"
+                            onClick={() => setFilter('Archived')}
+                          >
+                            view archived
+                          </button>
+                          .
+                        </>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
               {visibleClients.map((client) => {
