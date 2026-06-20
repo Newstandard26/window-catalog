@@ -8,23 +8,17 @@ import { CATALOG, getProduct } from '../data/catalog'
 import {
   autoEstimateName,
   currency,
+  deriveSellPrice,
+  estimateLabor,
+  estimateMaterialCost,
+  estimateMaterialPrice,
+  estimateProfit,
   estimateSubtotal,
   estimateTax,
   estimateTotal,
-  formatPrice,
   totalWindowCount,
 } from '../lib/format'
-import { PIPELINE, type Estimate, type EstimateStatus, type WindowItem } from '../types'
-
-// A representative "captured" window the AI import tools add (demo).
-const SAMPLE_IMPORT: Omit<WindowItem, 'id'> = {
-  location: 'Imported — Front Elevation',
-  width: 36,
-  height: 60,
-  productId: CATALOG[0].id,
-  quantity: 3,
-  unitPrice: CATALOG[0].unitPrice ?? 0,
-}
+import { PIPELINE, type Estimate, type EstimateStatus, type MarginMode, type WindowItem } from '../types'
 
 export function Estimator() {
   const { id } = useParams()
@@ -42,9 +36,22 @@ export function Estimator() {
       </Container>
     )
   }
-  // Fix 1: a fresh estimate is held in local state only — nothing is persisted
-  // until the first window is added or the user clicks Save.
+  // Task 0b / Fix 1: a fresh estimate lives in local state only — nothing is
+  // persisted until the first window is added or the user clicks Save.
   return <DraftEstimator />
+}
+
+/** Build a window line item, deriving the sell price from cost + margin. */
+function makeItem(
+  partial: Pick<WindowItem, 'location' | 'width' | 'height' | 'productId' | 'quantity' | 'unitCost'>,
+  mode: MarginMode,
+  pct: number,
+): Omit<WindowItem, 'id'> {
+  return {
+    ...partial,
+    unitPrice: deriveSellPrice(partial.unitCost, mode, pct),
+    priceOverridden: false,
+  }
 }
 
 /* ----------------------------- New (unsaved) draft ----------------------------- */
@@ -63,6 +70,11 @@ function DraftEstimator() {
     address: initialClient?.address ?? '',
     status: 'Draft' as EstimateStatus,
     taxRate: 0.0825,
+    marginMode: 'margin' as MarginMode,
+    marginPct: 35,
+    crewSize: 0,
+    hours: 0,
+    hourlyRate: 0,
     nameEdited: false,
   }))
 
@@ -74,6 +86,11 @@ function DraftEstimator() {
     status: draft.status,
     items: [],
     taxRate: draft.taxRate,
+    marginMode: draft.marginMode,
+    marginPct: draft.marginPct,
+    crewSize: draft.crewSize,
+    hours: draft.hours,
+    hourlyRate: draft.hourlyRate,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
@@ -85,6 +102,11 @@ function DraftEstimator() {
       address: draft.address,
       status: draft.status,
       taxRate: draft.taxRate,
+      marginMode: draft.marginMode,
+      marginPct: draft.marginPct,
+      crewSize: draft.crewSize,
+      hours: draft.hours,
+      hourlyRate: draft.hourlyRate,
       items: items.map((it) => ({ ...it, id: newId('w') })),
     })
     navigate(`/estimator/${created.id}`, { replace: true })
@@ -104,7 +126,7 @@ function DraftEstimator() {
     <>
       <PageHeader
         title="Estimator"
-        subtitle="Build a window schedule with live pricing."
+        subtitle="Build a window schedule with live pricing & margin."
         actions={
           <>
             <button className="btn-secondary" onClick={() => navigate('/projects')}>
@@ -130,12 +152,12 @@ function DraftEstimator() {
         </p>
         <EstimatorBody
           estimate={view}
-          toolsOpenDefault
           onAddItem={(item) => persist([item])}
-          onImportSample={() => persist([SAMPLE_IMPORT])}
           onUpdateItem={() => {}}
           onRemoveItem={() => {}}
           onTaxChange={(taxRate) => setDraft((d) => ({ ...d, taxRate }))}
+          onMarginChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
+          onLaborChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
         />
       </Container>
     </>
@@ -150,6 +172,7 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
     clients,
     updateEstimate,
     removeEstimate,
+    setEstimateMargin,
     addWindowItem,
     updateWindowItem,
     removeWindowItem,
@@ -168,10 +191,12 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
     })
   }
 
-  const onDelete = () => {
+  const onDelete = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
     if (window.confirm("Delete this estimate? This can't be undone.")) {
-      removeEstimate(estimate.id)
       navigate('/projects')
+      removeEstimate(estimate.id)
     }
   }
 
@@ -179,7 +204,7 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
     <>
       <PageHeader
         title="Estimator"
-        subtitle="Build a window schedule with live pricing."
+        subtitle="Build a window schedule with live pricing & margin."
         actions={
           <>
             <StatusBadge status={estimate.status} className="text-base" />
@@ -199,12 +224,12 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
         />
         <EstimatorBody
           estimate={estimate}
-          toolsOpenDefault={estimate.items.length === 0}
           onAddItem={(item) => addWindowItem(estimate.id, item)}
-          onImportSample={() => addWindowItem(estimate.id, SAMPLE_IMPORT)}
           onUpdateItem={(itemId, patch) => updateWindowItem(estimate.id, itemId, patch)}
           onRemoveItem={(itemId) => removeWindowItem(estimate.id, itemId)}
           onTaxChange={(taxRate) => updateEstimate(estimate.id, { taxRate })}
+          onMarginChange={(patch) => setEstimateMargin(estimate.id, patch)}
+          onLaborChange={(patch) => updateEstimate(estimate.id, patch)}
         />
       </Container>
     </>
@@ -275,40 +300,54 @@ function MetaBar({
 
 function EstimatorBody({
   estimate,
-  toolsOpenDefault,
   onAddItem,
-  onImportSample,
   onUpdateItem,
   onRemoveItem,
   onTaxChange,
+  onMarginChange,
+  onLaborChange,
 }: {
   estimate: Estimate
-  toolsOpenDefault: boolean
   onAddItem: (item: Omit<WindowItem, 'id'>) => void
-  onImportSample: () => void
   onUpdateItem: (itemId: string, patch: Partial<WindowItem>) => void
   onRemoveItem: (itemId: string) => void
   onTaxChange: (rate: number) => void
+  onMarginChange: (patch: { marginMode?: MarginMode; marginPct?: number }) => void
+  onLaborChange: (patch: Partial<Pick<Estimate, 'crewSize' | 'hours' | 'hourlyRate'>>) => void
 }) {
-  const [toolsOpen, setToolsOpen] = useState(toolsOpenDefault)
+  const [toolsOpen, setToolsOpen] = useState(estimate.items.length === 0)
+
+  const importSample = () => {
+    const p = CATALOG[0]
+    onAddItem(
+      makeItem(
+        {
+          location: 'Imported — Front Elevation',
+          width: 36,
+          height: 60,
+          productId: p.id,
+          quantity: 3,
+          unitCost: p.unitCost ?? 0,
+        },
+        estimate.marginMode,
+        estimate.marginPct,
+      ),
+    )
+    setToolsOpen(false)
+  }
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
       <div className="space-y-6 lg:col-span-4">
         <ProductBuilder
+          marginMode={estimate.marginMode}
+          marginPct={estimate.marginPct}
           onAdd={(item) => {
             onAddItem(item)
             setToolsOpen(false)
           }}
         />
-        <AddItemsTools
-          open={toolsOpen}
-          onToggle={() => setToolsOpen((v) => !v)}
-          onImportSample={() => {
-            onImportSample()
-            setToolsOpen(false)
-          }}
-        />
+        <AddItemsTools open={toolsOpen} onToggle={() => setToolsOpen((v) => !v)} onImportSample={importSample} />
       </div>
 
       <div className="lg:col-span-5">
@@ -316,40 +355,58 @@ function EstimatorBody({
       </div>
 
       <div className="lg:col-span-3">
-        <EstimateSummary estimate={estimate} onTaxChange={onTaxChange} />
+        <EstimateSummary
+          estimate={estimate}
+          onTaxChange={onTaxChange}
+          onMarginChange={onMarginChange}
+          onLaborChange={onLaborChange}
+        />
       </div>
     </div>
   )
 }
 
-function ProductBuilder({ onAdd }: { onAdd: (item: Omit<WindowItem, 'id'>) => void }) {
+function ProductBuilder({
+  marginMode,
+  marginPct,
+  onAdd,
+}: {
+  marginMode: MarginMode
+  marginPct: number
+  onAdd: (item: Omit<WindowItem, 'id'>) => void
+}) {
   const [form, setForm] = useState({
     location: '',
     width: 36,
     height: 60,
     productId: CATALOG[0].id,
     quantity: 1,
-    unitPrice: CATALOG[0].unitPrice ?? 0,
+    unitCost: CATALOG[0].unitCost ?? 0,
   })
 
+  // Task 0b: selecting a product auto-fills its cost from the catalog.
   const onProduct = (productId: string) => {
     const p = getProduct(productId)
-    // Pending products have no sourced price yet — default to 0 so the rep
-    // enters the quoted price for this job.
-    setForm((f) => ({ ...f, productId, unitPrice: p?.unitPrice ?? 0 }))
+    setForm((f) => ({ ...f, productId, unitCost: p?.unitCost ?? 0 }))
   }
 
+  const sell = deriveSellPrice(form.unitCost, marginMode, marginPct)
+
   const submit = () => {
-    // Fix 6: location is optional now — the button stays fully active rather
-    // than reading as faded/disabled. Fall back to a sensible default label.
-    onAdd({ ...form, location: form.location.trim() || 'New Window' })
+    onAdd(
+      makeItem(
+        { ...form, location: form.location.trim() || 'New Window' },
+        marginMode,
+        marginPct,
+      ),
+    )
     setForm((f) => ({ ...f, location: '', quantity: 1 }))
   }
 
   return (
     <div className="nsr-card p-6">
       <h2 className="text-lg font-bold text-slate-900">Build a window</h2>
-      <p className="mt-1 text-sm text-slate-500">Add a line to the schedule.</p>
+      <p className="mt-1 text-sm text-slate-500">Sell price is derived from cost + margin.</p>
 
       <div className="mt-5 space-y-4">
         <div>
@@ -386,7 +443,8 @@ function ProductBuilder({ onAdd }: { onAdd: (item: Omit<WindowItem, 'id'>) => vo
           <select className="field" value={form.productId} onChange={(e) => onProduct(e.target.value)}>
             {CATALOG.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.brand} {p.series} — {formatPrice(p.unitPrice)}
+                {p.brand} {p.series}
+                {p.unitCost == null ? ' — cost TBD' : ` — cost ${currency(p.unitCost)}`}
               </option>
             ))}
           </select>
@@ -403,14 +461,18 @@ function ProductBuilder({ onAdd }: { onAdd: (item: Omit<WindowItem, 'id'>) => vo
             />
           </div>
           <div>
-            <label className="field-label">Unit price</label>
+            <label className="field-label">Unit cost</label>
             <input
               type="number"
               className="field"
-              value={form.unitPrice}
-              onChange={(e) => setForm((f) => ({ ...f, unitPrice: Number(e.target.value) }))}
+              value={form.unitCost}
+              onChange={(e) => setForm((f) => ({ ...f, unitCost: Number(e.target.value) }))}
             />
           </div>
+        </div>
+        <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3.5 py-2.5 text-sm">
+          <span className="text-slate-500">Sell price @ {marginPct}% {marginMode}</span>
+          <span className="font-bold tabular-nums text-brand-700">{currency(sell)}</span>
         </div>
         <button className="btn-primary w-full" onClick={submit}>
           + Add to schedule
@@ -511,6 +573,15 @@ function WindowSchedule({
     )
   }
 
+  const setCost = (item: WindowItem, unitCost: number) => {
+    // Recompute the sell price unless this line was hand-overridden.
+    const patch: Partial<WindowItem> = { unitCost }
+    if (!item.priceOverridden) {
+      patch.unitPrice = deriveSellPrice(unitCost, estimate.marginMode, estimate.marginPct)
+    }
+    onUpdateItem(item.id, patch)
+  }
+
   return (
     <div className="nsr-card overflow-hidden">
       <div className="flex items-center justify-between border-b border-slate-100 p-5">
@@ -520,11 +591,19 @@ function WindowSchedule({
       <div className="divide-y divide-slate-100">
         {estimate.items.map((item) => {
           const product = getProduct(item.productId)
+          const lineMargin = (item.unitPrice - item.unitCost) * item.quantity
           return (
             <div key={item.id} className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="font-semibold text-slate-900">{item.location}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-900">{item.location}</span>
+                    {item.priceOverridden && (
+                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-700">
+                        Custom price
+                      </span>
+                    )}
+                  </div>
                   <div className="text-sm text-slate-500">
                     {product ? `${product.brand} ${product.series}` : 'Custom'} · {item.width}" × {item.height}"
                   </div>
@@ -536,32 +615,61 @@ function WindowSchedule({
                   Remove
                 </button>
               </div>
-              <div className="mt-3 flex flex-wrap items-end gap-4">
+
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div>
                   <label className="field-label">Qty</label>
                   <input
                     type="number"
                     min={1}
-                    className="field w-20"
+                    className="field"
                     value={item.quantity}
                     onChange={(e) => onUpdateItem(item.id, { quantity: Math.max(1, Number(e.target.value)) })}
                   />
                 </div>
                 <div>
-                  <label className="field-label">Unit price</label>
+                  <label className="field-label">Unit cost</label>
                   <input
                     type="number"
-                    className="field w-32"
-                    value={item.unitPrice}
-                    onChange={(e) => onUpdateItem(item.id, { unitPrice: Number(e.target.value) })}
+                    className="field"
+                    value={item.unitCost}
+                    onChange={(e) => setCost(item, Number(e.target.value))}
                   />
                 </div>
-                <div className="ml-auto text-right">
-                  <div className="text-sm text-slate-400">Line total</div>
-                  <div className="text-lg font-bold text-slate-900">
-                    {currency(item.unitPrice * item.quantity)}
-                  </div>
+                <div>
+                  <label className="field-label">Sell price</label>
+                  <input
+                    type="number"
+                    className="field"
+                    value={item.unitPrice}
+                    onChange={(e) =>
+                      onUpdateItem(item.id, { unitPrice: Number(e.target.value), priceOverridden: true })
+                    }
+                  />
                 </div>
+                <div className="flex flex-col justify-end text-right">
+                  <span className="text-sm text-slate-400">Line total</span>
+                  <span className="text-lg font-bold tabular-nums text-slate-900">
+                    {currency(item.unitPrice * item.quantity)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-2 flex items-center justify-between text-sm text-slate-500">
+                <span>Line margin: <span className="font-semibold text-emerald-700">{currency(lineMargin)}</span></span>
+                {item.priceOverridden && (
+                  <button
+                    className="font-medium text-brand-700 hover:text-brand-800"
+                    onClick={() =>
+                      onUpdateItem(item.id, {
+                        priceOverridden: false,
+                        unitPrice: deriveSellPrice(item.unitCost, estimate.marginMode, estimate.marginPct),
+                      })
+                    }
+                  >
+                    Reset to margin
+                  </button>
+                )}
               </div>
             </div>
           )
@@ -574,28 +682,71 @@ function WindowSchedule({
 function EstimateSummary({
   estimate,
   onTaxChange,
+  onMarginChange,
+  onLaborChange,
 }: {
   estimate: Estimate
   onTaxChange: (rate: number) => void
+  onMarginChange: (patch: { marginMode?: MarginMode; marginPct?: number }) => void
+  onLaborChange: (patch: Partial<Pick<Estimate, 'crewSize' | 'hours' | 'hourlyRate'>>) => void
 }) {
+  const materialCost = estimateMaterialCost(estimate)
+  const materialPrice = estimateMaterialPrice(estimate)
+  const margin = estimateProfit(estimate)
+  const labor = estimateLabor(estimate)
   const subtotal = estimateSubtotal(estimate)
   const tax = estimateTax(estimate)
   const total = estimateTotal(estimate)
-  // Fix 6: show the tax rate as a percentage while storing the decimal.
   const taxPercent = Number((estimate.taxRate * 100).toFixed(3))
 
   return (
     <div className="nsr-card sticky top-20 p-6">
       <h2 className="text-lg font-bold text-slate-900">Estimate Summary</h2>
 
-      <dl className="mt-5 space-y-4 text-base">
-        <div className="flex items-center justify-between">
-          <dt className="text-slate-500">Windows</dt>
-          <dd className="font-semibold tabular-nums text-slate-900">{totalWindowCount(estimate)}</dd>
+      {/* Margin controls */}
+      <div className="mt-4 rounded-lg border border-slate-200 p-3.5">
+        <div className="flex items-center gap-2">
+          <button
+            className={`flex-1 rounded-md px-2 py-1.5 text-sm font-semibold ${
+              estimate.marginMode === 'margin' ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-600'
+            }`}
+            onClick={() => onMarginChange({ marginMode: 'margin' })}
+          >
+            Margin
+          </button>
+          <button
+            className={`flex-1 rounded-md px-2 py-1.5 text-sm font-semibold ${
+              estimate.marginMode === 'markup' ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-600'
+            }`}
+            onClick={() => onMarginChange({ marginMode: 'markup' })}
+          >
+            Markup
+          </button>
         </div>
-        <div className="flex items-center justify-between">
-          <dt className="text-slate-500">Subtotal</dt>
-          <dd className="font-semibold tabular-nums text-slate-900">{currency(subtotal)}</dd>
+        <div className="mt-3 flex items-center justify-between">
+          <span className="text-sm text-slate-500">{estimate.marginMode === 'margin' ? 'Margin' : 'Markup'} %</span>
+          <div className="relative">
+            <input
+              type="number"
+              step={1}
+              min={0}
+              className="w-24 rounded border border-slate-300 py-1 pl-2 pr-6 text-sm"
+              value={estimate.marginPct}
+              onChange={(e) => onMarginChange({ marginPct: Number(e.target.value) })}
+            />
+            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Build-up */}
+      <dl className="mt-5 space-y-3 text-base">
+        <Row label="Material cost" value={currency(materialCost)} muted />
+        <Row label={`Margin (${estimate.marginPct}%)`} value={currency(margin)} className="text-emerald-700" />
+        <Row label="Material price (sell)" value={currency(materialPrice)} />
+        <Row label="Labor" value={currency(labor)} />
+        <div className="border-t border-slate-100 pt-3">
+          <Row label="Subtotal" value={currency(subtotal)} />
         </div>
         <div className="flex items-center justify-between gap-3">
           <dt className="flex items-center gap-2 text-slate-500">
@@ -609,26 +760,75 @@ function EstimateSummary({
                 value={taxPercent}
                 onChange={(e) => onTaxChange(Number(e.target.value) / 100)}
               />
-              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-slate-400">
-                %
-              </span>
+              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
             </span>
           </dt>
           <dd className="font-semibold tabular-nums text-slate-900">{currency(tax)}</dd>
         </div>
       </dl>
 
-      <div className="mt-5 border-t border-slate-200 pt-5">
+      <div className="mt-4 border-t border-slate-200 pt-4">
         <div className="flex items-baseline justify-between">
           <span className="text-base font-medium text-slate-500">Total</span>
           <span className="text-3xl font-bold tabular-nums text-brand-700">{currency(total)}</span>
         </div>
+        <div className="mt-3 flex items-center justify-between rounded-lg bg-emerald-50 px-3.5 py-2.5">
+          <span className="text-sm font-medium text-emerald-700">Est. profit</span>
+          <span className="text-lg font-bold tabular-nums text-emerald-700">{currency(margin)}</span>
+        </div>
       </div>
 
-      <div className="mt-6 flex items-center justify-between rounded-lg bg-slate-50 p-3.5">
-        <span className="text-sm text-slate-500">Status</span>
-        <StatusBadge status={estimate.status} />
-      </div>
+      {/* Labor inputs */}
+      <details className="mt-5 rounded-lg border border-slate-200 p-3.5">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-700">Labor (optional)</summary>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <LaborInput label="Crew" value={estimate.crewSize} onChange={(crewSize) => onLaborChange({ crewSize })} />
+          <LaborInput label="Hours" value={estimate.hours} onChange={(hours) => onLaborChange({ hours })} />
+          <LaborInput label="$/hr" value={estimate.hourlyRate} onChange={(hourlyRate) => onLaborChange({ hourlyRate })} />
+        </div>
+      </details>
+    </div>
+  )
+}
+
+function Row({
+  label,
+  value,
+  muted,
+  className = '',
+}: {
+  label: string
+  value: string
+  muted?: boolean
+  className?: string
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <dt className={muted ? 'text-slate-400' : 'text-slate-500'}>{label}</dt>
+      <dd className={`font-semibold tabular-nums ${className || 'text-slate-900'}`}>{value}</dd>
+    </div>
+  )
+}
+
+function LaborInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: number
+  onChange: (n: number) => void
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-slate-500">{label}</label>
+      <input
+        type="number"
+        min={0}
+        className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
     </div>
   )
 }

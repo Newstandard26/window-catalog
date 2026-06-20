@@ -22,6 +22,7 @@ export const CATALOG: CatalogProduct[] = [
     type: 'New Construction',
     configuration: 'Nail Fin · IN Setback · Sill Extender',
     grilles: 'Colonial 1H+2V',
+    unitCost: null, // TODO: vendor cost
     unitPrice: null, // TODO: ABC Supply pricing
     source: 'Pricing pending — ABC Supply (order # TBD)',
     energy: {
@@ -43,6 +44,7 @@ export const CATALOG: CatalogProduct[] = [
     type: 'Replacement',
     configuration: 'Exact Size · IN Setback',
     grilles: 'Colonial 1H+2V',
+    unitCost: null, // TODO: vendor cost
     unitPrice: null, // TODO: ABC Supply pricing
     source: 'Pricing pending — ABC Supply (order # TBD)',
     energy: {
@@ -64,6 +66,7 @@ export const CATALOG: CatalogProduct[] = [
     type: 'Replacement',
     configuration: 'Exact Size · IN Setback',
     grilles: 'Colonial 1H+2V',
+    unitCost: null, // TODO: vendor cost
     unitPrice: null, // TODO: Andersen quote
     source: 'Pricing pending — Andersen (quote # TBD)',
     energy: {
@@ -85,6 +88,7 @@ export const CATALOG: CatalogProduct[] = [
     type: 'Replacement',
     configuration: 'Exact Size · IN Setback · Sill Extender',
     grilles: 'Colonial 1H+2V',
+    unitCost: null, // TODO: vendor cost
     unitPrice: null, // TODO: ProVia order
     source: 'Pricing pending — ProVia (order # TBD)',
     energy: {
@@ -106,6 +110,7 @@ export const CATALOG: CatalogProduct[] = [
     type: 'New Construction',
     configuration: 'Nail Fin · IN Setback',
     grilles: 'Colonial 1H+2V',
+    unitCost: null, // TODO: vendor cost
     unitPrice: null, // TODO: Pella quote
     source: 'Pricing pending — Pella (quote # TBD)',
     energy: {
@@ -127,6 +132,7 @@ export const CATALOG: CatalogProduct[] = [
     type: 'New Construction',
     configuration: 'Nail Fin · IN Setback',
     grilles: 'None',
+    unitCost: null, // TODO: vendor cost
     unitPrice: null, // TODO: Pella quote
     source: 'Pricing pending — Pella (quote # TBD)',
     energy: {

@@ -41,7 +41,9 @@ export interface CatalogProduct {
   configuration: string
   /** Grille option, e.g. "Colonial 1H+2V" or "None". */
   grilles: string
-  /** Installed unit price. `null` = real pricing pending from supplier. */
+  /** NSR's internal cost per unit (vendor cost). `null` = pending. */
+  unitCost: number | null
+  /** Installed unit price (sell). `null` = real pricing pending from supplier. */
   unitPrice: number | null
   /** Supplier + order/quote reference. */
   source: string
@@ -51,6 +53,8 @@ export interface CatalogProduct {
   pending: boolean
 }
 
+export type MarginMode = 'margin' | 'markup'
+
 export interface WindowItem {
   id: string
   location: string
@@ -58,7 +62,13 @@ export interface WindowItem {
   height: number
   productId: string
   quantity: number
+  /** What NSR pays per unit (internal — never shown to the client). */
+  unitCost: number
+  /** What the client is charged per unit (sell price). */
   unitPrice: number
+  /** True when the sell price was set by hand, so a global margin change
+   * won't silently overwrite it. */
+  priceOverridden: boolean
 }
 
 export interface Estimate {
@@ -69,6 +79,13 @@ export interface Estimate {
   status: EstimateStatus
   items: WindowItem[]
   taxRate: number
+  /** Margin vs markup, and the single percentage used to derive sell prices. */
+  marginMode: MarginMode
+  marginPct: number
+  /** Optional labor block. laborTotal = crewSize * hours * hourlyRate. */
+  crewSize: number
+  hours: number
+  hourlyRate: number
   createdAt: string
   updatedAt: string
 }

@@ -7,9 +7,9 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { Client, Estimate, EstimateStatus, WindowItem } from '../types'
+import type { Client, Estimate, EstimateStatus, MarginMode, WindowItem } from '../types'
 import { SEED_CLIENTS, SEED_ESTIMATES } from './seed'
-import { estimateSubtotal, estimateTotal } from '../lib/format'
+import { deriveSellPrice, estimateSubtotal, estimateTotal } from '../lib/format'
 import { getClientStats } from '../lib/stats'
 
 const STORAGE_KEY = 'nsr-window-catalog:v1'
@@ -28,6 +28,28 @@ export function isJunkEstimate(e: Estimate): boolean {
   return e.items.length === 0 && estimateSubtotal(e) === 0 && !e.clientId
 }
 
+/**
+ * Task 1: backfill the cost/margin/labor fields on estimates saved before the
+ * margin engine existed. Legacy line items get unitCost = unitPrice (0 margin)
+ * and priceOverridden = true, so a later global margin change won't clobber the
+ * price the user originally entered.
+ */
+function migrateEstimate(e: Estimate): Estimate {
+  return {
+    ...e,
+    marginMode: e.marginMode ?? 'margin',
+    marginPct: e.marginPct ?? 35,
+    crewSize: e.crewSize ?? 0,
+    hours: e.hours ?? 0,
+    hourlyRate: e.hourlyRate ?? 0,
+    items: (e.items ?? []).map((it) => ({
+      ...it,
+      unitCost: it.unitCost ?? it.unitPrice,
+      priceOverridden: it.priceOverridden ?? true,
+    })),
+  }
+}
+
 function load(): PersistShape {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -35,7 +57,9 @@ function load(): PersistShape {
       const parsed = JSON.parse(raw) as PersistShape
       return {
         clients: parsed.clients ?? [],
-        estimates: (parsed.estimates ?? []).filter((e) => !isJunkEstimate(e)),
+        estimates: (parsed.estimates ?? [])
+          .map(migrateEstimate)
+          .filter((e) => !isJunkEstimate(e)),
       }
     }
   } catch {
@@ -59,6 +83,8 @@ interface StoreValue {
   updateEstimate: (id: string, patch: Partial<Estimate>) => void
   removeEstimate: (id: string) => void
   setEstimateStatus: (id: string, status: EstimateStatus) => void
+  /** Update margin mode/pct and recompute every non-overridden line's sell price. */
+  setEstimateMargin: (id: string, patch: { marginMode?: MarginMode; marginPct?: number }) => void
   addWindowItem: (estimateId: string, item: Omit<WindowItem, 'id'>) => void
   updateWindowItem: (estimateId: string, itemId: string, patch: Partial<WindowItem>) => void
   removeWindowItem: (estimateId: string, itemId: string) => void
@@ -125,6 +151,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
+  const setEstimateMargin: StoreValue['setEstimateMargin'] = useCallback((id, patch) => {
+    setEstimates((prev) =>
+      prev.map((e) => {
+        if (e.id !== id) return e
+        const marginMode: MarginMode = patch.marginMode ?? e.marginMode
+        const marginPct = patch.marginPct ?? e.marginPct
+        // Recompute sell prices for every line that hasn't been hand-overridden.
+        const items = e.items.map((it) =>
+          it.priceOverridden
+            ? it
+            : { ...it, unitPrice: deriveSellPrice(it.unitCost ?? 0, marginMode, marginPct) },
+        )
+        return { ...e, marginMode, marginPct, items, updatedAt: new Date().toISOString() }
+      }),
+    )
+  }, [])
+
   const addWindowItem: StoreValue['addWindowItem'] = useCallback((estimateId, item) => {
     const withId: WindowItem = { ...item, id: uid('w') }
     setEstimates((prev) =>
@@ -168,6 +211,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateEstimate,
     removeEstimate,
     setEstimateStatus,
+    setEstimateMargin,
     addWindowItem,
     updateWindowItem,
     removeWindowItem,

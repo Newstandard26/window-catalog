@@ -1,4 +1,21 @@
-import type { Estimate } from '../types'
+import type { Estimate, MarginMode } from '../types'
+
+export const percent = (n: number) => `${Number(n.toFixed(3))}%`
+
+/**
+ * Task 1: derive a sell price from cost using the estimate's margin/markup.
+ *   markup: price = cost * (1 + pct/100)
+ *   margin: price = cost / (1 - pct/100)
+ * Margin pct is clamped below 100 to avoid divide-by-zero / negatives.
+ */
+export function deriveSellPrice(cost: number, mode: MarginMode, pct: number): number {
+  const c = Number.isFinite(cost) ? cost : 0
+  if (mode === 'markup') return round2(c * (1 + pct / 100))
+  const safe = Math.min(Math.max(pct, 0), 99.99)
+  return round2(c / (1 - safe / 100))
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100
 
 export const currency = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
@@ -14,9 +31,25 @@ export const shortDate = (iso: string) =>
     year: 'numeric',
   })
 
-/** Subtotal across all window line items (qty × unit price). */
-export const estimateSubtotal = (e: Estimate) =>
+/** Internal material cost (qty × unit cost). Never shown to clients. */
+export const estimateMaterialCost = (e: Estimate) =>
+  e.items.reduce((sum, item) => sum + (item.unitCost ?? 0) * item.quantity, 0)
+
+/** Material sell price (qty × unit price). */
+export const estimateMaterialPrice = (e: Estimate) =>
   e.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0)
+
+/** Gross profit on materials (sell − cost). */
+export const estimateProfit = (e: Estimate) =>
+  estimateMaterialPrice(e) - estimateMaterialCost(e)
+
+/** Labor total = crew × hours × hourly rate. */
+export const estimateLabor = (e: Estimate) =>
+  (e.crewSize ?? 0) * (e.hours ?? 0) * (e.hourlyRate ?? 0)
+
+/** Subtotal = material sell price + labor (the taxable base). */
+export const estimateSubtotal = (e: Estimate) =>
+  estimateMaterialPrice(e) + estimateLabor(e)
 
 export const estimateTax = (e: Estimate) =>
   estimateSubtotal(e) * (e.taxRate ?? 0)
