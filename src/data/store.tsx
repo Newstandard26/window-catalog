@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -20,6 +21,7 @@ import { SEED_CLIENTS, SEED_ESTIMATES } from './seed'
 import { deriveSellPrice, estimateSubtotal, estimateTotal } from '../lib/format'
 import { getClientStats } from '../lib/stats'
 import { fetchSignedDocuments, getSigningStatus, isDocusignConfigured } from '../lib/sign'
+import { cloudDelete, cloudEnabled, cloudLoad, cloudUpsert } from './cloud'
 
 const STORAGE_KEY = 'nsr-window-catalog:v1'
 
@@ -112,13 +114,77 @@ interface StoreValue {
 const StoreContext = createContext<StoreValue | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  // Seed instantly from the localStorage cache so the UI never flashes empty,
+  // then reconcile against Supabase (the durable source of truth) on mount.
   const initial = useMemo(load, [])
   const [clients, setClients] = useState<Client[]>(initial.clients)
   const [estimates, setEstimates] = useState<Estimate[]>(initial.estimates)
+  const [hydrated, setHydrated] = useState(false)
 
+  // Last-synced snapshots (by object identity) so we only push what changed.
+  const syncedClients = useRef(new Map<string, Client>())
+  const syncedEstimates = useRef(new Map<string, Estimate>())
+
+  // localStorage mirror — an offline cache + backup, kept alongside the cloud.
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ clients, estimates }))
   }, [clients, estimates])
+
+  // Hydrate from Supabase once. If the cloud already has data it wins; if it's
+  // empty, the current local/seed data is migrated up on the first sync.
+  useEffect(() => {
+    if (!cloudEnabled) {
+      setHydrated(true)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const [cloudClients, cloudEstimates] = await Promise.all([
+          cloudLoad<Client>('clients'),
+          cloudLoad<Estimate>('estimates'),
+        ])
+        if (cancelled) return
+        if (cloudClients.length || cloudEstimates.length) {
+          const migrated = cloudEstimates.map(migrateEstimate).filter((e) => !isJunkEstimate(e))
+          setClients(cloudClients)
+          setEstimates(migrated)
+          // Mark these as already-synced so the sync effect won't echo them back.
+          syncedClients.current = new Map(cloudClients.map((c) => [c.id, c]))
+          syncedEstimates.current = new Map(migrated.map((e) => [e.id, e]))
+        }
+        // If the cloud is empty, leave the snapshots empty so the first sync
+        // pushes the existing local/seed data up.
+      } catch {
+        /* offline / unreachable — keep running on the localStorage cache */
+      } finally {
+        if (!cancelled) setHydrated(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Push client changes to the cloud (upsert changed, delete removed).
+  useEffect(() => {
+    if (!hydrated || !cloudEnabled) return
+    const changed = clients.filter((c) => syncedClients.current.get(c.id) !== c)
+    const removed = [...syncedClients.current.keys()].filter((id) => !clients.some((c) => c.id === id))
+    syncedClients.current = new Map(clients.map((c) => [c.id, c]))
+    if (changed.length) cloudUpsert('clients', changed.map((c) => ({ id: c.id, data: c }))).catch(() => {})
+    if (removed.length) cloudDelete('clients', removed).catch(() => {})
+  }, [clients, hydrated])
+
+  // Push estimate changes to the cloud.
+  useEffect(() => {
+    if (!hydrated || !cloudEnabled) return
+    const changed = estimates.filter((e) => syncedEstimates.current.get(e.id) !== e)
+    const removed = [...syncedEstimates.current.keys()].filter((id) => !estimates.some((e) => e.id === id))
+    syncedEstimates.current = new Map(estimates.map((e) => [e.id, e]))
+    if (changed.length) cloudUpsert('estimates', changed.map((e) => ({ id: e.id, data: e }))).catch(() => {})
+    if (removed.length) cloudDelete('estimates', removed).catch(() => {})
+  }, [estimates, hydrated])
 
   const touch = (id: string, e: Estimate): Estimate =>
     e.id === id ? { ...e, updatedAt: new Date().toISOString() } : e
