@@ -187,104 +187,128 @@ async function getAccessToken(): Promise<string> {
 
 async function buildPdf(p: Proposal): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
-  const page = doc.addPage([612, 792]) // US Letter
+  const W = 612, H = 792, M = 54
+  const page = doc.addPage([W, H])
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
-  const ink = rgb(0.12, 0.16, 0.22)
-  const muted = rgb(0.45, 0.5, 0.56)
+  const ink = rgb(0.11, 0.15, 0.21)
+  const muted = rgb(0.46, 0.51, 0.57)
+  const hair = rgb(0.85, 0.87, 0.9)
   const brand = rgb(0.15, 0.39, 0.92)
-  const L = 54
-  const R = 558
-  let y = 740
+  const L = M, R = W - M
+  let y = H - 56
 
-  const text = (s: string, x: number, yy: number, size: number, f = font, color = ink) =>
-    page.drawText(s, { x, y: yy, size, font: f, color })
-  const right = (s: string, xRight: number, yy: number, size: number, f = font, color = ink) =>
-    page.drawText(s, { x: xRight - f.widthOfTextAtSize(s, size), y: yy, size, font: f, color })
+  const text = (s: string, x: number, yy: number, size: number, f = font, c = ink) =>
+    page.drawText(s, { x, y: yy, size, font: f, color: c })
+  const right = (s: string, xR: number, yy: number, size: number, f = font, c = ink) =>
+    page.drawText(s, { x: xR - f.widthOfTextAtSize(s, size), y: yy, size, font: f, color: c })
+  const hr = (yy: number, x0 = L, x1 = R, t = 0.75, c = hair) =>
+    page.drawLine({ start: { x: x0, y: yy }, end: { x: x1, y: yy }, thickness: t, color: c })
+
+  // Top accent bar
+  page.drawRectangle({ x: 0, y: H - 6, width: W, height: 6, color: brand })
 
   // Letterhead
-  page.drawRectangle({ x: L, y: y - 4, width: 26, height: 26, color: brand })
-  text('NS', L + 5, y + 2, 13, bold, rgb(1, 1, 1))
-  text(p.companyName, L + 34, y + 4, 14, bold)
-  text(`${p.companyAddress}  ·  ${p.companyPhone}`, L + 34, y - 9, 9, font, muted)
-  right('WINDOW PROPOSAL', R, y + 4, 12, bold, rgb(0.3, 0.34, 0.4))
-  right(p.date, R, y - 9, 9, font, muted)
-  y -= 30
-  page.drawLine({ start: { x: L, y }, end: { x: R, y }, thickness: 1.5, color: ink })
-  y -= 26
+  page.drawRectangle({ x: L, y: y - 20, width: 30, height: 30, color: brand })
+  text('NS', L + 7, y - 11, 14, bold, rgb(1, 1, 1))
+  text(p.companyName, L + 40, y - 3, 15, bold)
+  text(`${p.companyAddress}     ${p.companyPhone}`, L + 40, y - 17, 9, font, muted)
+  right('PROPOSAL', R, y - 1, 13, bold, rgb(0.32, 0.36, 0.42))
+  right(p.date, R, y - 16, 9, font, muted)
+  y -= 42
+  hr(y, L, R, 1.5, ink)
+  y -= 24
 
   // Parties
+  const col2 = 322
   text('PREPARED FOR', L, y, 8, bold, muted)
-  text('PROJECT ADDRESS', 320, y, 8, bold, muted)
-  y -= 14
+  text('PROJECT ADDRESS', col2, y, 8, bold, muted)
+  y -= 15
   text(p.clientName || '—', L, y, 11, bold)
-  text(p.address || '—', 320, y, 10)
-  y -= 13
-  text(p.estimateName, 320, y, 9, font, muted)
-  y -= 26
+  text(trunc(p.address || '—', font, 10, R - col2), col2, y, 10)
+  y -= 24
+  text('ESTIMATE', L, y, 8, bold, muted)
+  y -= 14
+  text(trunc(p.estimateName, font, 10, R - L), L, y, 10)
+  y -= 28
 
   // Table header
-  text('LOCATION', L, y, 8, bold, muted)
-  text('PRODUCT', 170, y, 8, bold, muted)
-  text('SIZE', 330, y, 8, bold, muted)
-  right('QTY', 430, y, 8, bold, muted)
-  right('UNIT', 495, y, 8, bold, muted)
-  right('TOTAL', R, y, 8, bold, muted)
-  y -= 6
-  page.drawLine({ start: { x: L, y }, end: { x: R, y }, thickness: 0.75, color: rgb(0.8, 0.83, 0.87) })
-  y -= 16
+  const cLoc = L + 4, cProd = 178, cSize = 320, cQty = 418, cUnit = 498, cAmt = R - 4
+  page.drawRectangle({ x: L, y: y - 6, width: R - L, height: 20, color: rgb(0.96, 0.97, 0.985) })
+  text('LOCATION', cLoc, y, 8, bold, muted)
+  text('PRODUCT', cProd, y, 8, bold, muted)
+  text('SIZE', cSize, y, 8, bold, muted)
+  right('QTY', cQty, y, 8, bold, muted)
+  right('UNIT PRICE', cUnit, y, 8, bold, muted)
+  right('AMOUNT', cAmt, y, 8, bold, muted)
+  y -= 23
 
+  // Rows
   for (const ln of p.lines) {
-    text(trunc(ln.location, 22, font, 9), L, y, 9)
-    text(trunc(ln.product, 24, font, 9), 170, y, 9, font, muted)
-    text(ln.size, 330, y, 9, font, muted)
-    right(String(ln.qty), 430, y, 9)
-    right(ln.unitPrice, 495, y, 9)
-    right(ln.lineTotal, R, y, 9, bold)
-    y -= 16
-    if (y < 200) break // single-page safeguard
+    text(trunc(ln.location, font, 9, cProd - cLoc - 8), cLoc, y, 9)
+    text(trunc(ln.product, font, 9, cSize - cProd - 8), cProd, y, 9, font, rgb(0.3, 0.34, 0.4))
+    text(trunc(ln.size, font, 9, cQty - 32 - cSize), cSize, y, 9, font, muted)
+    right(String(ln.qty), cQty, y, 9)
+    right(ln.unitPrice, cUnit, y, 9)
+    right(ln.lineTotal, cAmt, y, 9, bold)
+    y -= 10
+    hr(y)
+    y -= 13
+    if (y < 300) break // single-page safeguard
   }
+  y -= 12
 
-  y -= 6
-  page.drawLine({ start: { x: 330, y }, end: { x: R, y }, thickness: 0.75, color: rgb(0.8, 0.83, 0.87) })
-  y -= 18
+  // Totals (right column)
+  const tLabel = 396
   const totalRow = (label: string, val: string, b = false) => {
-    text(label, 360, y, b ? 11 : 9, b ? bold : font, b ? ink : muted)
-    right(val, R, y, b ? 11 : 9, b ? bold : font)
-    y -= b ? 18 : 15
+    text(label, tLabel, y, b ? 11 : 9.5, b ? bold : font, b ? ink : muted)
+    right(val, cAmt, y, b ? 11 : 9.5, b ? bold : font)
+    y -= 17
   }
   totalRow('Materials', p.materials)
   if (p.labor !== '$0.00') totalRow('Labor', p.labor)
   totalRow('Subtotal', p.subtotal)
   totalRow('Tax', p.tax)
-  page.drawLine({ start: { x: 360, y: y + 6 }, end: { x: R, y: y + 6 }, thickness: 1.2, color: ink })
+  hr(y + 9, tLabel, cAmt, 1, ink)
   totalRow('Total', p.total, true)
 
-  // Signature block
-  y = Math.min(y - 24, 150)
-  page.drawLine({ start: { x: L, y }, end: { x: 300, y }, thickness: 0.75, color: rgb(0.6, 0.64, 0.7) })
+  // Acceptance / signature — a comfortable gap under the totals (no mid-page void).
+  y -= 24
+  hr(y, L, R)
+  y -= 22
+  text('ACCEPTANCE', L, y, 8, bold, muted)
+  y -= 36
+  hr(y, L, L + 232, 1, rgb(0.55, 0.6, 0.66))
+  hr(y, 330, 330 + 168, 1, rgb(0.55, 0.6, 0.66))
   // White anchor text drives DocuSign tab placement (invisible to the reader).
-  text('/sig_nsr/', L, y + 4, 9, font, rgb(1, 1, 1))
-  text('/date_nsr/', 360, y + 4, 9, font, rgb(1, 1, 1))
-  text('Client signature', L, y - 12, 8, font, muted)
-  text('Date', 360, y - 12, 8, font, muted)
-  y -= 34
+  text('/sig_nsr/', L + 2, y + 6, 8, font, rgb(1, 1, 1))
+  text('/date_nsr/', 332, y + 6, 8, font, rgb(1, 1, 1))
+  y -= 12
+  text('Client signature', L, y, 8, font, muted)
+  text('Date', 330, y, 8, font, muted)
+  y -= 24
   text(
-    `By signing, you accept this proposal from ${p.companyName}. Pricing valid for 30 days and`,
-    L,
-    y,
-    7.5,
-    font,
-    muted,
+    `By signing, you accept this proposal from ${p.companyName}. Pricing is valid for 30 days and is`,
+    L, y, 8, font, muted,
   )
-  text('subject to field measurement and product availability.', L, y - 10, 7.5, font, muted)
+  text('subject to final field measurement and product availability.', L, y - 11, 8, font, muted)
+
+  // Footer pinned to the bottom margin
+  hr(62, L, R)
+  text(p.companyName, L, 50, 8, font, muted)
+  right(`${p.companyAddress}     ${p.companyPhone}`, R, 50, 8, font, muted)
 
   return await doc.save()
 }
-function trunc(s: string, max: number, f: { widthOfTextAtSize: (t: string, n: number) => number }, size: number): string {
-  if (s.length <= max) return s
-  let out = s.slice(0, max)
-  while (out.length > 1 && f.widthOfTextAtSize(out + '…', size) > 150) out = out.slice(0, -1)
+function trunc(
+  s: string,
+  f: { widthOfTextAtSize: (t: string, n: number) => number },
+  size: number,
+  maxW: number,
+): string {
+  if (f.widthOfTextAtSize(s, size) <= maxW) return s
+  let out = s
+  while (out.length > 1 && f.widthOfTextAtSize(out + '…', size) > maxW) out = out.slice(0, -1)
   return out + '…'
 }
 
