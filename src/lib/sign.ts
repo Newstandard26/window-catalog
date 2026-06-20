@@ -23,9 +23,17 @@ import {
 export type SignProvider = 'builtin' | 'docusign'
 export type SignMode = 'email' | 'embedded'
 
-/** Public config only (feature flags / project keys), never secrets. */
-const SIGN_API_URL = import.meta.env.VITE_SIGN_API_URL as string | undefined
-const SUPABASE_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ?? ''
+/**
+ * Public config only (feature flags / project keys), never secrets. The signing
+ * backend URL and Supabase publishable key are public by design, so they ship as
+ * defaults; env vars override them per-environment if needed.
+ */
+const SIGN_API_URL =
+  (import.meta.env.VITE_SIGN_API_URL as string | undefined) ??
+  'https://qpjswujpidkirshwirfw.supabase.co/functions/v1/docusign-sign'
+const SUPABASE_KEY =
+  (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ??
+  'sb_publishable_qIVoBbkgL9YO7MYnDjH5cQ_BaRtg7tD'
 const APP_SECRET = (import.meta.env.VITE_SIGN_APP_SECRET as string | undefined) ?? ''
 
 export function isDocusignConfigured(): boolean {
