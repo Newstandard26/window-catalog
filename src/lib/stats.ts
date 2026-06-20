@@ -15,10 +15,14 @@ export interface ClientStats {
 export function getClientStats(clients: Client[]): ClientStats {
   let active = 0
   let prospects = 0
+  let total = 0
   for (const c of clients) {
+    // Archived (lost) clients don't count toward active/prospect totals.
+    if (c.archived) continue
+    total++
     const status = (c.status ?? '').trim().toLowerCase()
     if (status === 'active') active++
     else if (status === 'prospect') prospects++
   }
-  return { active, prospects, total: clients.length }
+  return { active, prospects, total }
 }

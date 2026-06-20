@@ -7,7 +7,7 @@ import { currency, estimateTotal, shortDate, totalWindowCount } from '../lib/for
 
 export function ClientProfile() {
   const { clientId = '' } = useParams()
-  const { getClient, estimatesForClient } = useStore()
+  const { getClient, estimatesForClient, updateClient } = useStore()
   const navigate = useNavigate()
 
   const client = getClient(clientId)
@@ -37,6 +37,21 @@ export function ClientProfile() {
             <Link to="/" className="btn-secondary">
               ← All Clients
             </Link>
+            {client.archived ? (
+              <button
+                className="btn-secondary"
+                onClick={() => updateClient(client.id, { archived: false })}
+              >
+                Restore
+              </button>
+            ) : (
+              <button
+                className="btn-secondary"
+                onClick={() => updateClient(client.id, { archived: true })}
+              >
+                Archive
+              </button>
+            )}
             {/* Phase 5: opens the Estimator with client name, address & contact pre-filled */}
             <button
               className="btn-primary"
@@ -54,7 +69,14 @@ export function ClientProfile() {
           <div className="nsr-card p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-slate-900">Contact</h2>
-              <StatusBadge status={client.status} />
+              <div className="flex items-center gap-2">
+                <StatusBadge status={client.status} />
+                {client.archived && (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
+                    Archived
+                  </span>
+                )}
+              </div>
             </div>
             <dl className="mt-4 space-y-3 text-base">
               <div>

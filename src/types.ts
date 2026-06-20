@@ -128,4 +128,6 @@ export interface Client {
   phone: string
   address: string
   createdAt: string
+  /** Archived (e.g. a lost customer): hidden from the default list & counts. */
+  archived?: boolean
 }

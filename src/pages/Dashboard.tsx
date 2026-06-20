@@ -8,7 +8,7 @@ import { useMetrics, useStore } from '../data/store'
 import { currency, estimateTotal, shortDate } from '../lib/format'
 import type { ClientStatus } from '../types'
 
-type ClientFilter = 'All' | 'Active' | 'Prospect'
+type ClientFilter = 'All' | 'Active' | 'Prospect' | 'Archived'
 
 /**
  * Combined home view: pipeline/client stats, the full client list (search +
@@ -16,7 +16,7 @@ type ClientFilter = 'All' | 'Active' | 'Prospect'
  * Merges what used to be the separate Dashboard and CRM tabs into one screen.
  */
 export function Dashboard() {
-  const { clients, estimates, estimatesForClient, getClient, addClient } = useStore()
+  const { clients, estimates, estimatesForClient, getClient, addClient, updateClient } = useStore()
   const metrics = useMetrics()
   const navigate = useNavigate()
   const [showNew, setShowNew] = useState(false)
@@ -33,10 +33,18 @@ export function Dashboard() {
     [estimates],
   )
 
+  const archivedCount = useMemo(() => clients.filter((c) => c.archived).length, [clients])
+
   const visibleClients = useMemo(() => {
     const q = query.trim().toLowerCase()
     return clients.filter((c) => {
-      if (filter !== 'All' && c.status !== filter) return false
+      // Archived filter shows only archived; every other view hides them.
+      if (filter === 'Archived') {
+        if (!c.archived) return false
+      } else {
+        if (c.archived) return false
+        if (filter !== 'All' && c.status !== filter) return false
+      }
       if (!q) return true
       return (
         c.name.toLowerCase().includes(q) ||
@@ -97,6 +105,7 @@ export function Dashboard() {
                     <option value="All">All</option>
                     <option value="Active">Active</option>
                     <option value="Prospect">Prospect</option>
+                    <option value="Archived">Archived{archivedCount ? ` (${archivedCount})` : ''}</option>
                   </select>
                 </div>
               </div>
@@ -130,6 +139,11 @@ export function Dashboard() {
                             {client.name}
                           </Link>
                           <StatusBadge status={client.status} />
+                          {client.archived && (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
+                              Archived
+                            </span>
+                          )}
                         </div>
                         <div className="mt-1 text-sm text-slate-500">{client.address}</div>
                         <div className="truncate text-sm text-slate-500">
@@ -150,12 +164,30 @@ export function Dashboard() {
                         <Link to={`/clients/${client.id}`} className="btn-secondary btn-sm">
                           Profile
                         </Link>
-                        <button
-                          className="btn-primary btn-sm"
-                          onClick={() => navigate(`/estimator?clientId=${client.id}`)}
-                        >
-                          New Estimate
-                        </button>
+                        {client.archived ? (
+                          <button
+                            className="btn-primary btn-sm"
+                            onClick={() => updateClient(client.id, { archived: false })}
+                          >
+                            Restore
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              className="btn-primary btn-sm"
+                              onClick={() => navigate(`/estimator?clientId=${client.id}`)}
+                            >
+                              New Estimate
+                            </button>
+                            <button
+                              className="btn-ghost btn-sm"
+                              title="Archive this client (hides them from the list)"
+                              onClick={() => updateClient(client.id, { archived: true })}
+                            >
+                              Archive
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
