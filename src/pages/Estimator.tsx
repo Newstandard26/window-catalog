@@ -4,7 +4,8 @@ import { Container } from '../components/Container'
 import { PageHeader } from '../components/PageHeader'
 import { StatusBadge } from '../components/StatusBadge'
 import { useStore } from '../data/store'
-import { CATALOG, getProduct } from '../data/catalog'
+import { catalogLabel, lineToCatalogInput } from '../data/catalog'
+import { inferWindowStyle } from '../components/WindowDiagram'
 import {
   autoEstimateName,
   currency,
@@ -85,8 +86,16 @@ export function Estimator() {
 function makeWindowItem(
   partial: Pick<
     WindowItem,
-    'location' | 'width' | 'height' | 'productId' | 'quantity' | 'unitPrice' | 'installType' | 'hrsPerWin'
-  >,
+    | 'location'
+    | 'width'
+    | 'height'
+    | 'productId'
+    | 'quantity'
+    | 'unitPrice'
+    | 'installType'
+    | 'hrsPerWin'
+  > &
+    Partial<Pick<WindowItem, 'productName' | 'style' | 'grille' | 'sizeBasis'>>,
 ): Omit<WindowItem, 'id'> {
   return {
     kind: 'material',
@@ -509,21 +518,41 @@ function WindowForm({
   estimate: Estimate
   onAdd: (item: Omit<WindowItem, 'id'>) => void
 }) {
+  const { catalogItems } = useStore()
   const [form, setForm] = useState(() => ({
     location: '',
     width: 36,
     height: 60,
-    productId: CATALOG[0].id,
+    productId: 'custom',
+    productName: '' as string | undefined,
+    style: undefined as WindowItem['style'],
+    grille: undefined as string | null | undefined,
+    sizeBasis: undefined as string | null | undefined,
     quantity: 1,
-    unitPrice: CATALOG[0].unitCost ?? 0,
+    unitPrice: 0,
     installType: 'Replacement' as WindowConstruction,
     hrsPerWin: defaultHoursForType(estimate, 'Replacement'),
   }))
 
-  // Selecting a product auto-fills its cost from the catalog.
+  // Selecting a catalog item auto-fills cost + size + diagram spec.
   const onProduct = (productId: string) => {
-    const p = getProduct(productId)
-    setForm((f) => ({ ...f, productId, unitPrice: p?.unitCost ?? 0 }))
+    if (productId === 'custom') {
+      setForm((f) => ({ ...f, productId, productName: '', style: undefined, grille: undefined, sizeBasis: undefined }))
+      return
+    }
+    const p = catalogItems.find((c) => c.id === productId)
+    if (!p) return
+    setForm((f) => ({
+      ...f,
+      productId,
+      productName: catalogLabel(p),
+      unitPrice: p.unitCost,
+      width: p.widthIn ?? f.width,
+      height: p.heightIn ?? f.height,
+      style: inferWindowStyle(p.style),
+      grille: p.grille,
+      sizeBasis: p.sizeBasis,
+    }))
   }
 
   // Switching install type auto-fills the default HRS/WIN (still overridable).
@@ -533,10 +562,14 @@ function WindowForm({
   const submit = () => {
     onAdd(
       makeWindowItem({
-        location: form.location.trim() || 'New Window',
+        location: form.location.trim() || form.productName || 'New Window',
         width: form.width,
         height: form.height,
-        productId: form.productId,
+        productId: form.productId === 'custom' ? '' : form.productId,
+        productName: form.productName || undefined,
+        style: form.style,
+        grille: form.grille,
+        sizeBasis: form.sizeBasis,
         quantity: Math.max(1, form.quantity),
         unitPrice: form.unitPrice,
         installType: form.installType,
@@ -582,13 +615,19 @@ function WindowForm({
       <div>
         <label className="field-label">Product</label>
         <select className="field" value={form.productId} onChange={(e) => onProduct(e.target.value)}>
-          {CATALOG.map((p) => (
+          <option value="custom">Custom / one-off</option>
+          {catalogItems.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.brand} {p.series}
-              {p.unitCost == null ? ' — cost TBD' : ` — cost ${currency(p.unitCost)}`}
+              {catalogLabel(p)}
+              {p.widthIn && p.heightIn ? ` · ${p.widthIn}"×${p.heightIn}"` : ''} — {currency(p.unitCost)}
             </option>
           ))}
         </select>
+        {catalogItems.length === 0 && (
+          <p className="mt-1 text-xs text-slate-400">
+            Catalog is empty — import a vendor quote below to start filling it.
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -828,13 +867,7 @@ function AddItemsTools({
         </div>
       )}
       {importOpen && (
-        <ImportQuoteModal
-          onClose={() => setImportOpen(false)}
-          onAdd={(items) => {
-            onAddItems(items)
-            setImportOpen(false)
-          }}
-        />
+        <ImportQuoteModal onClose={() => setImportOpen(false)} onAdd={onAddItems} />
       )}
     </div>
   )
@@ -852,13 +885,15 @@ function ImportQuoteModal({
   onClose: () => void
   onAdd: (items: Omit<WindowItem, 'id'>[]) => void
 }) {
+  const { upsertCatalogItems } = useStore()
   const fileRef = useRef<HTMLInputElement>(null)
-  const [phase, setPhase] = useState<'pick' | 'parsing' | 'review'>('pick')
+  const [phase, setPhase] = useState<'pick' | 'parsing' | 'review' | 'done'>('pick')
   const [error, setError] = useState('')
   const [fileName, setFileName] = useState('')
   const [result, setResult] = useState<ParseResult | null>(null)
   const [rows, setRows] = useState<ReviewRow[]>([])
   const [dragOver, setDragOver] = useState(false)
+  const [summary, setSummary] = useState<{ windows: number; created: number; updated: number } | null>(null)
 
   const handleFile = async (file: File) => {
     setError('')
@@ -889,7 +924,17 @@ function ImportQuoteModal({
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, include: !r.include } : r)))
 
   const chosen = rows.filter((r) => r.include)
-  const confirm = () => onAdd(chosen.map((r) => parsedLineToItem(r.line)))
+  const confirm = () => {
+    // Add every chosen line to the estimate.
+    onAdd(chosen.map((r) => parsedLineToItem(r.line)))
+    // Persist windows (not accessories) into the catalog store.
+    const windows = result ? chosen.filter((r) => r.line.category !== 'accessory') : []
+    const counts = windows.length
+      ? upsertCatalogItems(windows.map((r) => lineToCatalogInput(r.line, result!)))
+      : { created: 0, updated: 0 }
+    setSummary({ windows: chosen.length, created: counts.created, updated: counts.updated })
+    setPhase('done')
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
@@ -912,7 +957,7 @@ function ImportQuoteModal({
           </div>
         )}
 
-        {phase !== 'review' && (
+        {(phase === 'pick' || phase === 'parsing') && (
           <div
             onDragOver={(e) => {
               e.preventDefault()
@@ -1043,6 +1088,30 @@ function ImportQuoteModal({
             </div>
           </>
         )}
+
+        {phase === 'done' && summary && (
+          <div className="mt-4 flex flex-1 flex-col items-center justify-center py-10 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-300">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+            </div>
+            <h4 className="mt-4 text-lg font-bold text-slate-900">
+              Imported {summary.windows} line{summary.windows === 1 ? '' : 's'}
+            </h4>
+            <p className="mt-1 text-sm text-slate-500">
+              {summary.created} new catalog item{summary.created === 1 ? '' : 's'}, {summary.updated} updated.
+            </p>
+            <div className="mt-5 flex gap-3">
+              <Link to="/catalog" className="btn-secondary">
+                View catalog
+              </Link>
+              <button className="btn-primary" onClick={onClose}>
+                Done
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1087,7 +1156,6 @@ function WindowSchedule({
       </div>
       <div className="divide-y divide-slate-100">
         {estimate.items.map((item) => {
-          const product = getProduct(item.productId)
           const hrs = lineHours(estimate, item)
           return (
             <div key={item.id} className="p-5">
@@ -1095,7 +1163,7 @@ function WindowSchedule({
                 <div>
                   <div className="font-semibold text-slate-900">{item.location}</div>
                   <div className="text-sm text-slate-500">
-                    {`${product ? `${product.brand} ${product.series}` : item.productName || 'Custom'} · ${item.width}" × ${item.height}"`}
+                    {`${item.productName || 'Custom'} · ${item.width}" × ${item.height}"`}
                   </div>
                 </div>
                 <button

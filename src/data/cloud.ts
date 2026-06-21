@@ -25,7 +25,7 @@ const baseHeaders: Record<string, string> = {
   'content-type': 'application/json',
 }
 
-export type CloudTable = 'clients' | 'estimates'
+export type CloudTable = 'clients' | 'estimates' | 'catalog_items'
 
 /** Load every row's `data` document from a table. */
 export async function cloudLoad<T>(table: CloudTable): Promise<T[]> {

@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 import type {
+  CatalogItem,
   Client,
   CustomLaborItem,
   Estimate,
@@ -20,6 +21,7 @@ import type {
   WindowItem,
 } from '../types'
 import { SEED_CLIENTS, SEED_ESTIMATES } from './seed'
+import { catalogKey, type CatalogUpsertInput } from './catalog'
 import { DEFAULT_LABOR, estimateSubtotal, estimateTotal } from '../lib/format'
 import { getClientStats } from '../lib/stats'
 import { fetchSignedDocuments, getSigningStatus, isDocusignConfigured } from '../lib/sign'
@@ -30,6 +32,7 @@ const STORAGE_KEY = 'nsr-window-catalog:v1'
 interface PersistShape {
   clients: Client[]
   estimates: Estimate[]
+  catalogItems: CatalogItem[]
 }
 
 /**
@@ -102,12 +105,14 @@ function load(): PersistShape {
         estimates: (parsed.estimates ?? [])
           .map(migrateEstimate)
           .filter((e) => !isJunkEstimate(e)),
+        catalogItems: parsed.catalogItems ?? [],
       }
     }
   } catch {
     /* ignore corrupt storage */
   }
-  return { clients: SEED_CLIENTS, estimates: SEED_ESTIMATES }
+  // The catalog starts empty — it grows from imported vendor quotes.
+  return { clients: SEED_CLIENTS, estimates: SEED_ESTIMATES, catalogItems: [] }
 }
 
 const uid = (prefix: string) =>
@@ -116,6 +121,13 @@ const uid = (prefix: string) =>
 interface StoreValue {
   clients: Client[]
   estimates: Estimate[]
+  catalogItems: CatalogItem[]
+  /**
+   * Upsert imported windows into the catalog (dedup by catalogKey). New ones are
+   * created; existing ones update their unitCost/source and bump timesSeen.
+   * Returns how many were created vs updated for the import summary.
+   */
+  upsertCatalogItems: (inputs: CatalogUpsertInput[]) => { created: number; updated: number }
   getClient: (id: string) => Client | undefined
   getEstimate: (id: string) => Estimate | undefined
   getEstimateByToken: (token: string) => Estimate | undefined
@@ -157,16 +169,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const initial = useMemo(load, [])
   const [clients, setClients] = useState<Client[]>(initial.clients)
   const [estimates, setEstimates] = useState<Estimate[]>(initial.estimates)
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>(initial.catalogItems)
   const [hydrated, setHydrated] = useState(false)
 
   // Last-synced snapshots (by object identity) so we only push what changed.
   const syncedClients = useRef(new Map<string, Client>())
   const syncedEstimates = useRef(new Map<string, Estimate>())
+  const syncedCatalog = useRef(new Map<string, CatalogItem>())
 
   // localStorage mirror — an offline cache + backup, kept alongside the cloud.
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ clients, estimates }))
-  }, [clients, estimates])
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ clients, estimates, catalogItems }))
+  }, [clients, estimates, catalogItems])
 
   // Hydrate from Supabase once. If the cloud already has data it wins; if it's
   // empty, the current local/seed data is migrated up on the first sync.
@@ -178,18 +192,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     ;(async () => {
       try {
-        const [cloudClients, cloudEstimates] = await Promise.all([
+        const [cloudClients, cloudEstimates, cloudCatalog] = await Promise.all([
           cloudLoad<Client>('clients'),
           cloudLoad<Estimate>('estimates'),
+          cloudLoad<CatalogItem>('catalog_items'),
         ])
         if (cancelled) return
-        if (cloudClients.length || cloudEstimates.length) {
+        if (cloudClients.length || cloudEstimates.length || cloudCatalog.length) {
           const migrated = cloudEstimates.map(migrateEstimate).filter((e) => !isJunkEstimate(e))
           setClients(cloudClients)
           setEstimates(migrated)
+          setCatalogItems(cloudCatalog)
           // Mark these as already-synced so the sync effect won't echo them back.
           syncedClients.current = new Map(cloudClients.map((c) => [c.id, c]))
           syncedEstimates.current = new Map(migrated.map((e) => [e.id, e]))
+          syncedCatalog.current = new Map(cloudCatalog.map((c) => [c.id, c]))
         }
         // If the cloud is empty, leave the snapshots empty so the first sync
         // pushes the existing local/seed data up.
@@ -223,6 +240,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (changed.length) cloudUpsert('estimates', changed.map((e) => ({ id: e.id, data: e }))).catch(() => {})
     if (removed.length) cloudDelete('estimates', removed).catch(() => {})
   }, [estimates, hydrated])
+
+  // Push catalog changes to the cloud.
+  useEffect(() => {
+    if (!hydrated || !cloudEnabled) return
+    const changed = catalogItems.filter((c) => syncedCatalog.current.get(c.id) !== c)
+    const removed = [...syncedCatalog.current.keys()].filter((id) => !catalogItems.some((c) => c.id === id))
+    syncedCatalog.current = new Map(catalogItems.map((c) => [c.id, c]))
+    if (changed.length) cloudUpsert('catalog_items', changed.map((c) => ({ id: c.id, data: c }))).catch(() => {})
+    if (removed.length) cloudDelete('catalog_items', removed).catch(() => {})
+  }, [catalogItems, hydrated])
 
   const touch = (id: string, e: Estimate): Estimate =>
     e.id === id ? { ...e, updatedAt: new Date().toISOString() } : e
@@ -276,6 +303,55 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       prev.map((e) => (e.id === id ? { ...e, status, updatedAt: new Date().toISOString() } : e)),
     )
   }, [])
+
+  const upsertCatalogItems: StoreValue['upsertCatalogItems'] = useCallback(
+    (inputs) => {
+      const byKey = new Map(catalogItems.map((it) => [catalogKey(it), it]))
+      const next = [...catalogItems]
+      let created = 0
+      let updated = 0
+      for (const inp of inputs) {
+        const key = catalogKey(inp)
+        const existing = byKey.get(key)
+        if (existing) {
+          const merged: CatalogItem = {
+            ...existing,
+            // Latest quote wins on price + provenance; fill gaps from new data.
+            unitCost: inp.unitCost,
+            source: inp.source || existing.source,
+            vendor: inp.vendor ?? existing.vendor,
+            lastSeenQuote: inp.lastSeenQuote ?? existing.lastSeenQuote,
+            material: existing.material || inp.material,
+            type: existing.type ?? inp.type,
+            glass: existing.glass ?? inp.glass,
+            grille: existing.grille ?? inp.grille,
+            interiorColor: existing.interiorColor ?? inp.interiorColor,
+            uFactor: existing.uFactor ?? inp.uFactor,
+            shgc: existing.shgc ?? inp.shgc,
+            stc: existing.stc ?? inp.stc,
+            timesSeen: existing.timesSeen + 1,
+          }
+          const idx = next.findIndex((x) => x.id === existing.id)
+          next[idx] = merged
+          byKey.set(key, merged)
+          updated++
+        } else {
+          const item: CatalogItem = {
+            ...inp,
+            id: uid('cat'),
+            createdAt: new Date().toISOString(),
+            timesSeen: 1,
+          }
+          next.unshift(item)
+          byKey.set(key, item)
+          created++
+        }
+      }
+      setCatalogItems(next)
+      return { created, updated }
+    },
+    [catalogItems],
+  )
 
   const setEstimateMargin: StoreValue['setEstimateMargin'] = useCallback((id, patch) => {
     // Global margin: just store mode/pct — it's applied to the whole subtotal at
@@ -449,6 +525,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value: StoreValue = {
     clients,
     estimates,
+    catalogItems,
+    upsertCatalogItems,
     getClient,
     getEstimate,
     getEstimateByToken,

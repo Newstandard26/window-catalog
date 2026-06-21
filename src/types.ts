@@ -12,48 +12,47 @@ export const PIPELINE: EstimateStatus[] = [
   'Lost',
 ]
 
-export type CatalogTier = 'Good' | 'Better' | 'Best'
 export type WindowConstruction = 'New Construction' | 'Replacement'
 
-/**
- * Energy performance per product line. Numeric values are nullable so a line can
- * be scaffolded before the exact sourced numbers are entered (`null` = pending).
- */
-export interface CatalogEnergy {
-  uFactor: number | null
-  shgc: number | null
-  /** Visible transmittance (visible light). */
-  visibleLight: number | null
-  /** Clear opening dimensions, e.g. `20.5" × 36"`. */
-  clearOpening: string | null
-  energyStar: boolean | null
-}
+export type MarginMode = 'margin' | 'markup'
 
-export interface CatalogProduct {
+/**
+ * A persisted catalog product, grown automatically from imported vendor quotes.
+ * One row per distinct window product (L/R hands of the same size + price are
+ * collapsed). `unitCost` is the latest vendor cost seen; `timesSeen` and
+ * `lastSeenQuote` track how often / where it has appeared.
+ */
+export interface CatalogItem {
   id: string
   brand: string
   series: string
-  material: 'Vinyl' | 'Fiberglass' | 'Fibrex' | 'Wood-Clad'
-  tier: CatalogTier
-  /** New Construction vs Replacement. */
-  type: WindowConstruction
-  /** e.g. "Nail Fin · IN Setback · Sill Extender". */
-  configuration: string
-  /** Grille option, e.g. "Colonial 1H+2V" or "None". */
-  grilles: string
-  /** NSR's internal cost per unit (vendor cost). `null` = pending. */
-  unitCost: number | null
-  /** Installed unit price (sell). `null` = real pricing pending from supplier. */
-  unitPrice: number | null
-  /** Supplier + order/quote reference. */
+  style: string
+  /** Frame material when known (often blank from a quote). */
+  material: string
+  widthIn: number | null
+  heightIn: number | null
+  sizeBasis: string | null
+  type: string | null
+  exteriorColor: string | null
+  interiorColor: string | null
+  glass: string | null
+  grille: string | null
+  /** Latest vendor per-unit cost. */
+  unitCost: number
+  /** Always "vendor cost" — these are NSR's costs, not sell prices. */
+  priceBasis: string
+  /** Human-readable origin, e.g. "Pella · quote #20469629". */
   source: string
-  energy: CatalogEnergy
-  highlight: string
-  /** True while exact pricing / energy numbers are still TBD. */
-  pending: boolean
+  vendor: string | null
+  uFactor?: number | null
+  shgc?: number | null
+  stc?: number | null
+  createdAt: string
+  /** Quote/order number it was most recently seen on. */
+  lastSeenQuote: string | null
+  /** How many quote lines have mapped to this item. */
+  timesSeen: number
 }
-
-export type MarginMode = 'margin' | 'markup'
 export type LineKind = 'material' | 'labor'
 
 /** Window/door operation styles a diagram can render. */

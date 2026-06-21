@@ -55,9 +55,9 @@ export const SEED_ESTIMATES: Estimate[] = [
     createdAt: '2026-05-04T15:00:00.000Z',
     updatedAt: '2026-05-20T15:00:00.000Z',
     items: [
-      { id: 'w1', kind: 'material', location: 'Living Room', width: 36, height: 60, productId: 'andersen-100', quantity: 2, unitPrice: 1185, unitCost: 770, priceOverridden: false },
-      { id: 'w2', kind: 'material', location: 'Primary Bedroom', width: 30, height: 48, productId: 'andersen-100', quantity: 3, unitPrice: 1185, unitCost: 770, priceOverridden: false },
-      { id: 'w3', kind: 'material', location: 'Kitchen', width: 24, height: 36, productId: 'pella-lifestyle', quantity: 1, unitPrice: 845, unitCost: 549, priceOverridden: false },
+      { id: 'w1', kind: 'material', location: 'Living Room', width: 36, height: 60, productId: 'andersen-100', productName: 'Andersen 100 Series', quantity: 2, unitPrice: 1185, unitCost: 770, priceOverridden: false },
+      { id: 'w2', kind: 'material', location: 'Primary Bedroom', width: 30, height: 48, productId: 'andersen-100', productName: 'Andersen 100 Series', quantity: 3, unitPrice: 1185, unitCost: 770, priceOverridden: false },
+      { id: 'w3', kind: 'material', location: 'Kitchen', width: 24, height: 36, productId: 'pella-lifestyle', productName: 'Pella Lifestyle Series', quantity: 1, unitPrice: 845, unitCost: 549, priceOverridden: false },
     ],
   },
   {
@@ -72,8 +72,8 @@ export const SEED_ESTIMATES: Estimate[] = [
     createdAt: '2026-06-01T15:00:00.000Z',
     updatedAt: '2026-06-12T15:00:00.000Z',
     items: [
-      { id: 'w4', kind: 'material', location: 'Unit 2A Front', width: 36, height: 60, productId: 'pella-casement', quantity: 4, unitPrice: 1320, unitCost: 858, priceOverridden: false },
-      { id: 'w5', kind: 'material', location: 'Unit 2A Rear', width: 30, height: 48, productId: 'harvey-windgate', quantity: 6, unitPrice: 760, unitCost: 494, priceOverridden: false },
+      { id: 'w4', kind: 'material', location: 'Unit 2A Front', width: 36, height: 60, productId: 'pella-casement', productName: 'Pella Lifestyle Casement', quantity: 4, unitPrice: 1320, unitCost: 858, priceOverridden: false },
+      { id: 'w5', kind: 'material', location: 'Unit 2A Rear', width: 30, height: 48, productId: 'harvey-windgate', productName: 'Harvey Windgate', quantity: 6, unitPrice: 760, unitCost: 494, priceOverridden: false },
     ],
   },
   {
@@ -88,8 +88,8 @@ export const SEED_ESTIMATES: Estimate[] = [
     createdAt: '2026-06-11T15:00:00.000Z',
     updatedAt: '2026-06-14T15:00:00.000Z',
     items: [
-      { id: 'w6', kind: 'material', location: 'Front Bay', width: 48, height: 60, productId: 'harvey-belmont', quantity: 1, unitPrice: 615, unitCost: 400, priceOverridden: false },
-      { id: 'w7', kind: 'material', location: 'Bedrooms', width: 30, height: 48, productId: 'harvey-belmont', quantity: 4, unitPrice: 615, unitCost: 400, priceOverridden: false },
+      { id: 'w6', kind: 'material', location: 'Front Bay', width: 48, height: 60, productId: 'harvey-belmont', productName: 'Harvey Belmont', quantity: 1, unitPrice: 615, unitCost: 400, priceOverridden: false },
+      { id: 'w7', kind: 'material', location: 'Bedrooms', width: 30, height: 48, productId: 'harvey-belmont', productName: 'Harvey Belmont', quantity: 4, unitPrice: 615, unitCost: 400, priceOverridden: false },
     ],
   },
   {
@@ -104,7 +104,7 @@ export const SEED_ESTIMATES: Estimate[] = [
     createdAt: '2026-06-16T15:00:00.000Z',
     updatedAt: '2026-06-16T15:00:00.000Z',
     items: [
-      { id: 'w8', kind: 'material', location: 'Sunroom', width: 36, height: 72, productId: 'provia-en600', quantity: 5, unitPrice: 690, unitCost: 449, priceOverridden: false },
+      { id: 'w8', kind: 'material', location: 'Sunroom', width: 36, height: 72, productId: 'provia-en600', productName: 'ProVia Endure EN600', quantity: 5, unitPrice: 690, unitCost: 449, priceOverridden: false },
     ],
   },
 ]

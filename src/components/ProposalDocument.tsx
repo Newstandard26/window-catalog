@@ -1,5 +1,4 @@
 import type { Client, Estimate } from '../types'
-import { getProduct } from '../data/catalog'
 import { COMPANY } from '../data/company'
 import { WindowDiagram, inferWindowStyle } from './WindowDiagram'
 import { clientProposal, currency, shortDate } from '../lib/format'
@@ -74,15 +73,10 @@ export function ProposalDocument({
           </thead>
           <tbody>
             {windows.map(({ item, unitPrice, lineTotal }) => {
-              const product = getProduct(item.productId)
               const style =
                 item.style ??
-                inferWindowStyle(
-                  [product?.series, product?.configuration, product?.highlight, item.location]
-                    .filter(Boolean)
-                    .join(' '),
-                )
-              const grille = item.grille ?? product?.grilles
+                inferWindowStyle([item.productName, item.location].filter(Boolean).join(' '))
+              const grille = item.grille
               return (
                 <tr key={item.id} className="border-b border-slate-100 align-top">
                   <td className="py-2.5 pr-2">
@@ -98,9 +92,7 @@ export function ProposalDocument({
                     />
                   </td>
                   <td className="py-2.5 pr-2 text-slate-800">{item.location}</td>
-                  <td className="py-2.5 pr-2 text-slate-600">
-                    {product ? `${product.brand} ${product.series}` : item.productName || 'Custom'}
-                  </td>
+                  <td className="py-2.5 pr-2 text-slate-600">{item.productName || 'Custom'}</td>
                   <td className="py-2.5 pr-2 text-slate-600">{`${item.width}" × ${item.height}"`}</td>
                   <td className="py-2.5 pr-2 text-right tabular-nums text-slate-700">{item.quantity}</td>
                   <td className="py-2.5 pr-2 text-right tabular-nums text-slate-700">{currency(unitPrice)}</td>

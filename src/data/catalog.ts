@@ -1,155 +1,71 @@
-import type { CatalogProduct } from '../types'
+import type { CatalogItem } from '../types'
+import type { ParseResult, ParsedLine } from '../lib/quote'
 
 /**
- * The NSR window catalog — real product lines.
- *
- * ⚠️ PRICING & ENERGY NUMBERS ARE PENDING. Per the data-restore task, exact unit
- * prices and energy specs must come from the supplier source documents (ABC
- * Supply / Andersen / ProVia / Pella quotes) — they are intentionally left as
- * `null` (rendered as "Pending") rather than approximated. Fill these in from
- * the source spreadsheet and set `pending: false` once verified.
- *
- * Configuration / type / grilles reflect the standard NSR spec for each line and
- * can be adjusted per the source docs.
+ * The NSR catalog is a persisted, self-growing store (see the store provider):
+ * every vendor quote dropped into the Estimator upserts its windows here. This
+ * module holds the pure helpers — dedup key, material list, and the mapping from
+ * a parsed quote line to a catalog upsert input.
  */
-export const CATALOG: CatalogProduct[] = [
-  {
-    id: 'harvey-windgate',
-    brand: 'Harvey Building Products',
-    series: 'Windgate',
-    material: 'Vinyl',
-    tier: 'Good',
-    type: 'New Construction',
-    configuration: 'Nail Fin · IN Setback · Sill Extender',
-    grilles: 'Colonial 1H+2V',
-    unitCost: null, // TODO: vendor cost
-    unitPrice: null, // TODO: ABC Supply pricing
-    source: 'Pricing pending — ABC Supply (order # TBD)',
-    energy: {
-      uFactor: null,
-      shgc: null,
-      visibleLight: null,
-      clearOpening: null,
-      energyStar: true,
-    },
-    highlight: 'Double-hung vinyl, value tier sourced via ABC Supply',
-    pending: true,
-  },
-  {
-    id: 'harvey-belmont',
-    brand: 'Harvey Building Products',
-    series: 'Belmont',
-    material: 'Vinyl',
-    tier: 'Better',
-    type: 'Replacement',
-    configuration: 'Exact Size · IN Setback',
-    grilles: 'Colonial 1H+2V',
-    unitCost: null, // TODO: vendor cost
-    unitPrice: null, // TODO: ABC Supply pricing
-    source: 'Pricing pending — ABC Supply (order # TBD)',
-    energy: {
-      uFactor: null,
-      shgc: null,
-      visibleLight: null,
-      clearOpening: null,
-      energyStar: true,
-    },
-    highlight: 'Double-hung vinyl replacement, upgraded glass package',
-    pending: true,
-  },
-  {
-    id: 'andersen-100',
-    brand: 'Andersen',
-    series: '100 Series',
-    material: 'Fibrex',
-    tier: 'Best',
-    type: 'Replacement',
-    configuration: 'Exact Size · IN Setback',
-    grilles: 'Colonial 1H+2V',
-    unitCost: null, // TODO: vendor cost
-    unitPrice: null, // TODO: Andersen quote
-    source: 'Pricing pending — Andersen (quote # TBD)',
-    energy: {
-      uFactor: null,
-      shgc: null,
-      visibleLight: null,
-      clearOpening: null,
-      energyStar: true,
-    },
-    highlight: 'Fibrex composite frame — strong, low-maintenance',
-    pending: true,
-  },
-  {
-    id: 'provia-en600',
-    brand: 'ProVia',
-    series: 'Endure EN600',
-    material: 'Vinyl',
-    tier: 'Best',
-    type: 'Replacement',
-    configuration: 'Exact Size · IN Setback · Sill Extender',
-    grilles: 'Colonial 1H+2V',
-    unitCost: null, // TODO: vendor cost
-    unitPrice: null, // TODO: ProVia order
-    source: 'Pricing pending — ProVia (order # TBD)',
-    energy: {
-      uFactor: null,
-      shgc: null,
-      visibleLight: null,
-      clearOpening: null,
-      energyStar: true,
-    },
-    highlight: 'Premium double-hung vinyl, foam-insulated frame & sash',
-    pending: true,
-  },
-  {
-    id: 'pella-lifestyle',
-    brand: 'Pella',
-    series: 'Lifestyle Series',
-    material: 'Wood-Clad',
-    tier: 'Best',
-    type: 'New Construction',
-    configuration: 'Nail Fin · IN Setback',
-    grilles: 'Colonial 1H+2V',
-    unitCost: null, // TODO: vendor cost
-    unitPrice: null, // TODO: Pella quote
-    source: 'Pricing pending — Pella (quote # TBD)',
-    energy: {
-      uFactor: null,
-      shgc: null,
-      visibleLight: null,
-      clearOpening: null,
-      energyStar: true,
-    },
-    highlight: 'Wood-clad, customizable performance glass packages',
-    pending: true,
-  },
-  {
-    id: 'pella-casement',
-    brand: 'Pella',
-    series: 'Lifestyle Casement',
-    material: 'Wood-Clad',
-    tier: 'Best',
-    type: 'New Construction',
-    configuration: 'Nail Fin · IN Setback',
-    grilles: 'None',
-    unitCost: null, // TODO: vendor cost
-    unitPrice: null, // TODO: Pella quote
-    source: 'Pricing pending — Pella (quote # TBD)',
-    energy: {
-      uFactor: null,
-      shgc: null,
-      visibleLight: null,
-      clearOpening: null,
-      energyStar: true,
-    },
-    highlight: 'Casement configuration, tight seal for high efficiency',
-    pending: true,
-  },
-]
 
-export function getProduct(id: string): CatalogProduct | undefined {
-  return CATALOG.find((p) => p.id === id)
+export const CATALOG_PRICE_BASIS = 'vendor cost'
+
+/** What an import contributes per window before the store assigns id/createdAt. */
+export type CatalogUpsertInput = Omit<CatalogItem, 'id' | 'createdAt' | 'timesSeen'>
+
+const norm = (s?: string | null) => (s ?? '').trim().toLowerCase()
+
+/**
+ * Dedup key: brand + series + style + size + exterior color + size basis.
+ * Handing is intentionally excluded so L/R of the same size + price collapse
+ * into one catalog item.
+ */
+export function catalogKey(
+  i: Pick<CatalogItem, 'brand' | 'series' | 'style' | 'widthIn' | 'heightIn' | 'exteriorColor' | 'sizeBasis'>,
+): string {
+  return [
+    norm(i.brand),
+    norm(i.series),
+    norm(i.style),
+    i.widthIn ?? '',
+    i.heightIn ?? '',
+    norm(i.exteriorColor),
+    norm(i.sizeBasis),
+  ].join('|')
 }
 
-/** Unique materials present in the catalog, for filter chips. */
-export const CATALOG_MATERIALS = Array.from(new Set(CATALOG.map((p) => p.material)))
+/** Distinct, non-empty materials present in the catalog (for filter chips). */
+export const catalogMaterials = (items: CatalogItem[]): string[] =>
+  Array.from(new Set(items.map((i) => i.material).filter(Boolean)))
+
+/** Display label for a catalog item, e.g. "Pella Lifestyle Casement". */
+export const catalogLabel = (i: CatalogItem): string =>
+  [i.brand, i.series, i.style].filter(Boolean).join(' ').trim() || 'Catalog item'
+
+/** Map a parsed quote line + its quote meta onto a catalog upsert input. */
+export function lineToCatalogInput(line: ParsedLine, meta: ParseResult): CatalogUpsertInput {
+  const vendor = meta.vendor ?? line.brand ?? null
+  const quote = meta.quoteNumber ?? null
+  const source = [vendor, quote ? `quote #${quote}` : line.source ?? null]
+    .filter(Boolean)
+    .join(' · ') || 'Imported quote'
+  return {
+    brand: line.brand ?? vendor ?? 'Unknown',
+    series: line.series ?? '',
+    style: line.style ?? '',
+    material: '',
+    widthIn: line.widthIn ?? null,
+    heightIn: line.heightIn ?? null,
+    sizeBasis: line.sizeBasis ?? null,
+    type: line.type ?? null,
+    exteriorColor: line.exteriorColor ?? null,
+    interiorColor: line.interiorColor ?? null,
+    glass: line.glass ?? null,
+    grille: line.grille ?? null,
+    unitCost: Number(line.unitCost) || 0,
+    priceBasis: CATALOG_PRICE_BASIS,
+    source,
+    vendor,
+    lastSeenQuote: quote,
+  }
+}

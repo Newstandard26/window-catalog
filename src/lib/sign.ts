@@ -1,5 +1,4 @@
 import type { Client, Estimate } from '../types'
-import { getProduct } from '../data/catalog'
 import { COMPANY } from '../data/company'
 import { clientProposal, currency, shortDate } from './format'
 
@@ -77,17 +76,14 @@ export function buildProposalPayload(
   // Client-facing build-up: the global margin is folded into every line so the
   // table foots to the Total without exposing cost or margin.
   const view = clientProposal(estimate)
-  const windowLines: ProposalLine[] = view.windows.map(({ item, unitPrice, lineTotal }) => {
-    const product = getProduct(item.productId)
-    return {
-      location: item.location || '—',
-      product: product ? `${product.brand} ${product.series}` : item.productName || 'Custom',
-      size: `${item.width}" × ${item.height}"`,
-      qty: item.quantity,
-      unitPrice: currency(unitPrice),
-      lineTotal: currency(lineTotal),
-    }
-  })
+  const windowLines: ProposalLine[] = view.windows.map(({ item, unitPrice, lineTotal }) => ({
+    location: item.location || '—',
+    product: item.productName || 'Custom',
+    size: `${item.width}" × ${item.height}"`,
+    qty: item.quantity,
+    unitPrice: currency(unitPrice),
+    lineTotal: currency(lineTotal),
+  }))
   const laborLines: ProposalLine[] = view.labor.map((l) => ({
     location: l.label,
     product: 'Labor',
