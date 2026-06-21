@@ -115,6 +115,8 @@ export interface WindowItem {
   width: number
   height: number
   productId: string
+  /** Display name when the line isn't tied to a catalog product (e.g. imported). */
+  productName?: string
   quantity: number
   /** What NSR pays per unit (internal — never shown to the client). */
   unitCost: number

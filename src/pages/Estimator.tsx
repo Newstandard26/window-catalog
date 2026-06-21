@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
 import { Container } from '../components/Container'
 import { PageHeader } from '../components/PageHeader'
@@ -27,6 +27,14 @@ import {
   type SignMode,
 } from '../lib/sign'
 import { getActiveClients } from '../lib/stats'
+import {
+  parseQuote,
+  parsedLineToItem,
+  ACCEPTED_QUOTE_TYPES,
+  MAX_QUOTE_BYTES,
+  type ParseResult,
+  type ParsedLine,
+} from '../lib/quote'
 import {
   PIPELINE,
   type Client,
@@ -356,26 +364,6 @@ function EstimatorBody({
 }) {
   const [toolsOpen, setToolsOpen] = useState(estimate.items.length === 0)
 
-  const importSample = () => {
-    const p = CATALOG[0]
-    onAddItem(
-      makeItem(
-        {
-          kind: 'material',
-          location: 'Imported — Front Elevation',
-          width: 36,
-          height: 60,
-          productId: p.id,
-          quantity: 3,
-          unitCost: p.unitCost ?? 0,
-        },
-        estimate.marginMode,
-        estimate.marginPct,
-      ),
-    )
-    setToolsOpen(false)
-  }
-
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
       <div className="space-y-6 lg:col-span-4">
@@ -387,7 +375,16 @@ function EstimatorBody({
             setToolsOpen(false)
           }}
         />
-        <AddItemsTools open={toolsOpen} onToggle={() => setToolsOpen((v) => !v)} onImportSample={importSample} />
+        <AddItemsTools
+          open={toolsOpen}
+          onToggle={() => setToolsOpen((v) => !v)}
+          marginMode={estimate.marginMode}
+          marginPct={estimate.marginPct}
+          onAddItems={(items) => {
+            items.forEach(onAddItem)
+            setToolsOpen(false)
+          }}
+        />
       </div>
 
       <div className="lg:col-span-5">
@@ -556,14 +553,18 @@ function ProductBuilder({
 function AddItemsTools({
   open,
   onToggle,
-  onImportSample,
+  onAddItems,
+  marginMode,
+  marginPct,
 }: {
   open: boolean
   onToggle: () => void
-  onImportSample: () => void
+  onAddItems: (items: Omit<WindowItem, 'id'>[]) => void
+  marginMode: MarginMode
+  marginPct: number
 }) {
-  const tools = [
-    { label: 'Import Vendor Quote', desc: 'Parse a PDF/photo quote into line items' },
+  const [importOpen, setImportOpen] = useState(false)
+  const soon = [
     { label: 'Web Clipper', desc: 'Pull a product from a manufacturer page' },
     { label: 'CompanyCam', desc: 'Import measured openings from site photos' },
   ]
@@ -575,7 +576,7 @@ function AddItemsTools({
       >
         <div>
           <div className="text-lg font-bold text-slate-900">Add items with AI</div>
-          <div className="text-sm text-slate-500">Import, clip, or capture windows automatically</div>
+          <div className="text-sm text-slate-500">Import a vendor quote to add windows automatically</div>
         </div>
         <svg
           width="22"
@@ -591,28 +592,269 @@ function AddItemsTools({
       </button>
       {open && (
         <div className="space-y-3 border-t border-slate-100 p-5">
-          {tools.map((t) => (
-            <button
+          <button
+            onClick={() => setImportOpen(true)}
+            className="flex w-full items-center gap-3 rounded-lg border border-slate-200 p-3.5 text-left transition-colors hover:border-brand-300 hover:bg-brand-50"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-500/15 text-brand-500">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 16V4m0 0L8 8m4-4l4 4M5 16v2a2 2 0 002 2h10a2 2 0 002-2v-2" />
+              </svg>
+            </span>
+            <span>
+              <span className="block font-semibold text-slate-900">Import Vendor Quote</span>
+              <span className="block text-sm text-slate-500">
+                Drop or select a PDF/photo quote → review → add lines
+              </span>
+            </span>
+          </button>
+
+          {soon.map((t) => (
+            <div
               key={t.label}
-              onClick={onImportSample}
-              className="flex w-full items-center gap-3 rounded-lg border border-slate-200 p-3.5 text-left transition-colors hover:border-brand-300 hover:bg-brand-50"
+              className="flex w-full items-center gap-3 rounded-lg border border-slate-200 p-3.5 opacity-60"
+              title="Coming soon"
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 5v14M5 12h14" />
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 7v5l3 2" />
                 </svg>
               </span>
-              <span>
-                <span className="block font-semibold text-slate-900">{t.label}</span>
-                <span className="block text-sm text-slate-500">{t.desc}</span>
+              <span className="min-w-0">
+                <span className="block font-semibold text-slate-500">{t.label}</span>
+                <span className="block text-sm text-slate-400">{t.desc}</span>
               </span>
-            </button>
+              <span className="ml-auto shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-400">
+                Coming soon
+              </span>
+            </div>
           ))}
-          <p className="text-xs text-slate-400">
-            Demo: each tool adds a sample captured window to the schedule.
-          </p>
         </div>
       )}
+      {importOpen && (
+        <ImportQuoteModal
+          marginMode={marginMode}
+          marginPct={marginPct}
+          onClose={() => setImportOpen(false)}
+          onAdd={(items) => {
+            onAddItems(items)
+            setImportOpen(false)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+interface ReviewRow {
+  include: boolean
+  line: ParsedLine
+}
+
+function ImportQuoteModal({
+  marginMode,
+  marginPct,
+  onClose,
+  onAdd,
+}: {
+  marginMode: MarginMode
+  marginPct: number
+  onClose: () => void
+  onAdd: (items: Omit<WindowItem, 'id'>[]) => void
+}) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [phase, setPhase] = useState<'pick' | 'parsing' | 'review'>('pick')
+  const [error, setError] = useState('')
+  const [fileName, setFileName] = useState('')
+  const [result, setResult] = useState<ParseResult | null>(null)
+  const [rows, setRows] = useState<ReviewRow[]>([])
+  const [dragOver, setDragOver] = useState(false)
+
+  const handleFile = async (file: File) => {
+    setError('')
+    if (!ACCEPTED_QUOTE_TYPES.includes(file.type)) {
+      setError('Unsupported file. Upload a PDF, PNG, JPG, or WEBP.')
+      return
+    }
+    if (file.size > MAX_QUOTE_BYTES) {
+      setError('File is too large (max 20 MB).')
+      return
+    }
+    setFileName(file.name)
+    setPhase('parsing')
+    try {
+      const res = await parseQuote(file)
+      setResult(res)
+      setRows(res.lines.map((line) => ({ include: line.category !== 'accessory', line })))
+      setPhase('review')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not parse the quote.')
+      setPhase('pick')
+    }
+  }
+
+  const patch = (i: number, p: Partial<ParsedLine>) =>
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, line: { ...r.line, ...p } } : r)))
+  const toggle = (i: number) =>
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, include: !r.include } : r)))
+
+  const chosen = rows.filter((r) => r.include)
+  const confirm = () => onAdd(chosen.map((r) => parsedLineToItem(r.line, marginMode, marginPct)))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div className="nsr-card flex max-h-[88vh] w-full max-w-3xl flex-col p-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-xl font-bold text-slate-900">Import Vendor Quote</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Drop a PDF or photo of a vendor quote. We extract the windows and per-unit costs for review.
+            </p>
+          </div>
+          <button className="btn-ghost btn-sm" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        {error && (
+          <div className="mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">
+            {error}
+          </div>
+        )}
+
+        {phase !== 'review' && (
+          <div
+            onDragOver={(e) => {
+              e.preventDefault()
+              setDragOver(true)
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragOver(false)
+              const f = e.dataTransfer.files?.[0]
+              if (f) handleFile(f)
+            }}
+            className={`mt-4 flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-10 text-center transition-colors ${
+              dragOver ? 'border-brand-500 bg-brand-500/10' : 'border-slate-300'
+            }`}
+          >
+            {phase === 'parsing' ? (
+              <>
+                <div className="text-base font-semibold text-slate-900">Parsing {fileName}…</div>
+                <div className="mt-1 text-sm text-slate-500">Extracting line items — this can take a few seconds.</div>
+              </>
+            ) : (
+              <>
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="text-slate-400">
+                  <path d="M12 16V4m0 0L8 8m4-4l4 4M5 16v2a2 2 0 002 2h10a2 2 0 002-2v-2" />
+                </svg>
+                <div className="mt-3 text-base font-semibold text-slate-900">Drop a vendor quote PDF here</div>
+                <div className="mt-1 text-sm text-slate-500">PDF, PNG, JPG, or WEBP · up to 20 MB</div>
+                <button className="btn-primary btn-sm mt-4" onClick={() => fileRef.current?.click()}>
+                  or browse your computer
+                </button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg,.webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) handleFile(f)
+                    e.target.value = ''
+                  }}
+                />
+              </>
+            )}
+          </div>
+        )}
+
+        {phase === 'review' && result && (
+          <>
+            <div className="mt-4 text-sm text-slate-500">
+              {result.vendor ? `${result.vendor} ` : ''}
+              {result.quoteNumber ? `quote #${result.quoteNumber} · ` : ''}
+              {rows.length} line{rows.length === 1 ? '' : 's'} found — review, then add.
+            </div>
+            <div className="mt-3 flex-1 overflow-auto rounded-lg border border-slate-200">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="p-2"> </th>
+                    <th className="p-2">Product</th>
+                    <th className="p-2">Size</th>
+                    <th className="p-2 text-right">Qty</th>
+                    <th className="p-2 text-right">Unit cost</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.map((r, i) => {
+                    const low = (r.line.confidence ?? 1) < 0.6
+                    const accessory = r.line.category === 'accessory'
+                    return (
+                      <tr key={i} className={r.include ? '' : 'opacity-50'}>
+                        <td className="p-2 align-top">
+                          <input type="checkbox" checked={r.include} onChange={() => toggle(i)} />
+                        </td>
+                        <td className="p-2 align-top">
+                          <input
+                            className="field text-sm"
+                            value={[r.line.brand, r.line.series, r.line.style].filter(Boolean).join(' ')}
+                            onChange={(e) => patch(i, { brand: e.target.value, series: '', style: r.line.style })}
+                          />
+                          <div className="mt-1 flex flex-wrap gap-1 text-xs">
+                            {accessory && (
+                              <span className="rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-400">accessory</span>
+                            )}
+                            {low && (
+                              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-semibold text-amber-300">
+                                check
+                              </span>
+                            )}
+                            {r.line.grille && <span className="text-slate-400">{r.line.grille}</span>}
+                          </div>
+                        </td>
+                        <td className="p-2 align-top whitespace-nowrap text-slate-600">
+                          {(r.line.widthIn ?? '—') + '" × ' + (r.line.heightIn ?? '—') + '"'}
+                        </td>
+                        <td className="p-2 align-top">
+                          <input
+                            type="number"
+                            min={1}
+                            className="field w-16 text-right text-sm"
+                            value={r.line.qty ?? 1}
+                            onChange={(e) => patch(i, { qty: Number(e.target.value) })}
+                          />
+                        </td>
+                        <td className="p-2 align-top">
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            className="field w-24 text-right text-sm"
+                            value={r.line.unitCost ?? 0}
+                            onChange={(e) => patch(i, { unitCost: Number(e.target.value) })}
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-5 flex items-center justify-between">
+              <button className="btn-secondary" onClick={() => setPhase('pick')}>
+                ← Choose another file
+              </button>
+              <button className="btn-primary" disabled={chosen.length === 0} onClick={confirm}>
+                Add {chosen.length} line{chosen.length === 1 ? '' : 's'} to estimate
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -683,7 +925,7 @@ function WindowSchedule({
                   <div className="text-sm text-slate-500">
                     {item.kind === 'labor'
                       ? 'Labor line'
-                      : `${product ? `${product.brand} ${product.series}` : 'Custom'} · ${item.width}" × ${item.height}"`}
+                      : `${product ? `${product.brand} ${product.series}` : item.productName || 'Custom'} · ${item.width}" × ${item.height}"`}
                   </div>
                 </div>
                 <button

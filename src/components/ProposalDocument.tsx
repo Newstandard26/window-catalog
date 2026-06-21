@@ -112,7 +112,11 @@ export function ProposalDocument({
                   </td>
                   <td className="py-2.5 pr-2 text-slate-800">{item.location}</td>
                   <td className="py-2.5 pr-2 text-slate-600">
-                    {item.kind === 'labor' ? 'Labor' : product ? `${product.brand} ${product.series}` : 'Custom'}
+                    {item.kind === 'labor'
+                      ? 'Labor'
+                      : product
+                        ? `${product.brand} ${product.series}`
+                        : item.productName || 'Custom'}
                   </td>
                   <td className="py-2.5 pr-2 text-slate-600">
                     {item.kind === 'labor' ? '—' : `${item.width}" × ${item.height}"`}
