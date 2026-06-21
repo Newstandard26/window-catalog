@@ -19,7 +19,7 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'content-type': 'application/json' } })
 
-const PROMPT = `You are extracting window and door line items from a building-products vendor quote (Pella, ProVia, ABC Supply / Harvey, Andersen, etc.). Return ONLY a single JSON object — no prose, no markdown fences.
+const PROMPT = `You are extracting window and door line items from a building-products vendor quote (Pella, ProVia, ABC Supply / Harvey, Andersen, etc.). Read the WHOLE document. Return ONLY a single JSON object — no prose, no markdown fences.
 
 Schema:
 {
@@ -39,16 +39,41 @@ Schema:
   }]
 }
 
-Rules:
-- One entry per distinct product line. unitCost = the PER-UNIT price, never the extended/line total.
-  - Pella "Proposal - Detailed": use the per-unit "Item Price".
-  - ProVia spec sheets: use the "$X per one" (per-one) sell price.
-  - ABC Supply / Harvey: use the per-item subtotal, including any glass upgrade.
-- widthIn/heightIn in inches; convert fractions (e.g. "36 1/2" -> 36.5).
-- style: Single Hung, Double Hung, Casement, Awning, Picture/Fixed, Slider, Octagon, Half-Circle, Bow, Bay, Garden, Sliding Patio Door, Hinged/French Door, Storm Door.
-- For mulled / multi-wide units, fill "sections" with each sub-unit's style in order (e.g. [{"style":"Single Hung","label":"SH"},{"style":"Picture","label":"Picture"},{"style":"Single Hung","label":"SH"}]).
-- category "accessory" for non-window/door items (install tape, foam, caulk, casing, sealant, screws, parts, trim). Include them but mark accessory.
-- unitCost numeric only (strip "$" and commas). confidence 0..1 for the row.
+GENERAL RULES
+- One entry per distinct product line item.
+- unitCost = the PER-UNIT cost (what the buyer pays for ONE unit). NEVER the extended/line total (price × qty), and NEVER an order-level Subtotal, Tax, or grand Total.
+- unitCost numeric only — strip "$" and commas.
+- widthIn/heightIn in inches; convert fractions ("36 1/2" -> 36.5, "29 - 3/4\\"" -> 29.75). Use the WHOLE-unit size, not a single sub-lite's size.
+- style is free text mapped later — use readable words: "Single Hung", "Double Hung", "Casement", "Awning", "Picture", "Slider", "Octagon", "Half-Circle", "Bow", "Bay", "Garden", "Sliding Patio Door", "French Door", "Hinged Door", "Storm Door".
+- handing: "L" for any Left / Left-Hinge / Hinged Left / Left Casement; "R" for Right. null if none.
+- grille: when a grid pattern like "Traditional (2W5H)" / "2 Wide 5 High" is given, output the lite grid as "<cols>W<rows>H" (e.g. "2W5H"). For "No Grille"/"None"/clear glass output null.
+- sections: for any mulled / multi-lite / multi-wide unit, list each sub-lite IN ORDER with its own style and a short label (e.g. [{"style":"Casement","label":"L"},{"style":"Picture","label":"Fixed"},{"style":"Casement","label":"R"}]). Leave null for a single-lite unit.
+- category "accessory" for non-window/door items: installation tape, spray foam, caulk/sealant, casing/trim/moulding, screws, shims, parts, head expanders sold as a separate line. Include them but mark accessory. Windows = "window", doors (patio/French/hinged/storm) = "door".
+- IGNORE non-product pages: warranty, terms & conditions, project-review checklists, signature pages, and any "Order Totals" / "Taxable Subtotal" / "Sales Tax" / "Total" / "Amount Due" summary block.
+- confidence 0..1 for the row (low when a value was guessed).
+
+PELLA — "Proposal - Detailed"
+- Each item block has a Line # (10,15,20,…) and three columns: "Item Price | Qty | Ext'd Price". unitCost = Item Price (already per-unit). qty = Qty.
+- The bold heading names the unit, e.g. "Replacement: Sash Only. Lifestyle, Casement Left, 29 X 59, …" -> style Casement, handing L. "Awning, Vent" -> Awning. "Double Sliding Door … Fixed / Vent Left" -> Sliding Patio Door (category door). "Fixed Frame Octagon" -> Octagon. "Direct Set Fixed Frame Half Circle" -> Half-Circle. "2-Wide Casement" -> two Casement sections.
+- Size: use the nominal whole-unit size from the heading / unit "Frame Size" (e.g. "29 X 59" -> 29×59). For a mulled unit use the OVERALL size in the heading (e.g. "58 X 46.5"), NOT each sub-unit's Frame Size. (Rough Opening is ~3/4" larger — prefer the unit/frame size.) sizeBasis "Frame".
+- A single Line # may contain numbered sub-units ("1: … Left Casement", "2: … Fixed Frame Half Circle") joined by "Vertical Mull" (side-by-side) or "Horizontal Mull" (stacked/transom) -> put each in sections.
+- Grille line "Grille: GBG, …, Traditional (2W5H), …" -> "2W5H"; "Grille: No Grille" -> null.
+- location = the Location text ("FRONT", "RIGHT BATH (T)", "MASTER CLOSET"). Accessories: TAPE, FOAM, CAULK, CASING, "Installation Tape", "Great Stuff … Foam", "Installation Sealant", "Wood Products … Colonial" -> category accessory (unitCost = Item Price). vendor "Pella"; quoteNumber from "Quote Number:".
+
+PROVIA — "Your Professional-Class Product" spec sheets
+- Each product is a spec sheet identified by "Order #<order>-<n>" and "Qty: N". One line per distinct order-line suffix (-1, -2, …). A single unit can span two pages ("Page 1 of 2" / "Page 2 of 2", same Order #) — treat as ONE line.
+- Pricing: "Sell Price: $X ($Y per one)" -> unitCost = the "($Y per one)" value. If only "Sell Price: $X" appears (no "per one"), unitCost = $X. CRITICAL: on the last spec sheet a "Tax - 8.75%: $…" and "Total: $…" may appear directly under Sell Price — those are the ORDER tax and grand total; do NOT use them as the line price.
+- Size: use "Unit Size" / "Exact Size" / "Window Size" (the actual unit). For bow/bay use the "Overall Unit … Unit Size". Do NOT use "Opening Size"/"Opening Width Range".
+- Style from the model code + label: "601SH / Single Hung"; "609 / Picture Window" -> Picture; "626 / 2-Lite Casement" -> two Casement sections; "629 / 3-Lite Casement" -> three Casement sections; "3-Lite Bow Window" -> Bow (sections: Casement, Picture, Casement); "GW / Garden Window" -> Garden; "Legacy French Entry Door" -> French Door (category door); "Spectrum … Storm Door" / "Full View" -> Storm Door (category door).
+- Mulled units list "Window A1 …/A2 …" or "Window 625/628/624 …" sub-sections ("Factory Mulled", "Two Across", "N-Lite") -> one section each, in order. handing from "Hinged Left/Right (OLI)", "Left Hand Inswing", "Primary Active: Right". brand "ProVia", series from "Endure EN600 Series" (or stated line). vendor "ProVia"; quoteNumber = the order number (e.g. "15384773").
+
+ABC SUPPLY / HARVEY — "QUOTE" table (ITEM | DESCRIPTION | QTY | SIZE | PRICE | TOTAL)
+- Each numbered item has a base row (e.g. "Belmont Single Casement … PRICE 329.09") plus option rows (color, glazing, glass, screen) each with its own upcharge (usually $0.00; glass upgrades cost more). "ITEM SUBTOTAL" = base + all option upcharges for that line.
+- unitCost = ITEM SUBTOTAL ÷ QTY (per-unit, including glass/option upcharges). If no ITEM SUBTOTAL, use PRICE plus the per-unit option upcharges.
+- Size "TTT: 22 W x 33 H" -> width 22, height 33 (ignore the "TTT:" code). sizeBasis "Exact" when "Exact Size" is listed.
+- Style from description: "Single Casement"->Casement, "Single Vent Slider"/"Slider"->Slider, "Single Hung"/"Double Hung"/"Picture"/"Awning" accordingly. brand from the product line ("Belmont"). handing "Left Hinge - Outside Looking In"->L, "Right Hinge"->R. glass from "Glass IG{…}".
+- IGNORE the bottom "SUBTOTAL / TAX / TOTAL" row. vendor "ABC Supply" (or "Harvey" if shown); quoteNumber from "ORDER:".
+
 Return the JSON object only.`
 
 function extractJson(text: string): unknown {
@@ -100,7 +125,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 8000,
+        max_tokens: 16000,
         messages: [{ role: 'user', content: [docBlock, { type: 'text', text: PROMPT }] }],
       }),
     })
