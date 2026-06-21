@@ -35,7 +35,7 @@ export function Proposal() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 py-8 print:bg-white print:py-0">
+    <div className="paper min-h-screen bg-slate-100 py-8 print:bg-white print:py-0">
       <div className="no-print mx-auto mb-6 flex max-w-[8.5in] items-center justify-between px-4">
         <Link to={`/estimator/${estimate.id}`} className="btn-secondary btn-sm">
           ← Back to estimate

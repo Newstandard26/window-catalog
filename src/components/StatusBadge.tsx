@@ -1,14 +1,16 @@
 import type { ClientStatus, EstimateStatus } from '../types'
 
 // One status-badge style reused everywhere (Phase 2).
+// Dark chips: translucent colored fill + bright colored text per status, so
+// they read on black. Uses non-remapped color scales (emerald/sky/amber/…).
 const STYLES: Record<string, string> = {
-  Active: 'bg-emerald-100 text-emerald-700 ring-emerald-200',
-  Prospect: 'bg-amber-100 text-amber-700 ring-amber-200',
-  Draft: 'bg-slate-100 text-slate-600 ring-slate-200',
-  Sent: 'bg-sky-100 text-sky-700 ring-sky-200',
-  Pending: 'bg-violet-100 text-violet-700 ring-violet-200',
-  Won: 'bg-emerald-100 text-emerald-700 ring-emerald-200',
-  Lost: 'bg-rose-100 text-rose-700 ring-rose-200',
+  Active: 'bg-emerald-500/15 text-emerald-300',
+  Prospect: 'bg-amber-500/15 text-amber-300',
+  Draft: 'bg-white/10 text-slate-400',
+  Sent: 'bg-sky-500/15 text-sky-300',
+  Pending: 'bg-violet-500/15 text-violet-300',
+  Won: 'bg-emerald-500/15 text-emerald-300',
+  Lost: 'bg-rose-500/15 text-rose-300',
 }
 
 export function StatusBadge({
@@ -18,10 +20,10 @@ export function StatusBadge({
   status: EstimateStatus | ClientStatus | string
   className?: string
 }) {
-  const style = STYLES[status] ?? 'bg-slate-100 text-slate-600 ring-slate-200'
+  const style = STYLES[status] ?? 'bg-white/10 text-slate-400'
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-semibold ring-1 ring-inset ${style} ${className}`}
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-semibold ${style} ${className}`}
     >
       {status}
     </span>

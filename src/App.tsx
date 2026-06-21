@@ -49,7 +49,7 @@ function Shell() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-      <footer className="border-t border-slate-200 bg-white">
+      <footer className="border-t border-slate-200 bg-black">
         <div className="mx-auto w-full max-w-content px-4 py-6 text-sm text-slate-500 sm:px-6 lg:px-8">
           © {new Date().getFullYear()} New Standard Restoration LLC — Window Catalog
         </div>

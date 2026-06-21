@@ -4,25 +4,43 @@ export default {
   theme: {
     extend: {
       colors: {
-        // NSR brand blue — matches Estimator buttons / Catalog accents
+        // NSR Elite accent — bright sky blue. The whole `brand` ramp maps to it
+        // so any brand-* utility renders the accent; 50/100 are dark tints for
+        // subtle accent fills, 800 is the hover.
         brand: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
+          50: '#0e2a35',
+          100: '#123a49',
+          200: '#17455a',
+          300: '#2aa5d8',
+          400: '#51c5f4',
+          500: '#51c5f4',
+          600: '#51c5f4',
+          700: '#51c5f4',
+          800: '#38b6e8',
+          900: '#2aa5d8',
         },
-        // Dark slate used on the top nav + page headers (Catalog hero)
+        // Near-black surfaces for the nav + page-header band.
         ink: {
-          DEFAULT: '#1e293b',
-          700: '#334155',
-          800: '#1e293b',
-          900: '#0f172a',
+          DEFAULT: '#0a0a0c',
+          700: '#15151a',
+          800: '#0a0a0c',
+          900: '#000000',
+        },
+        // Dark theme: the `slate` ramp is inverted so the app's existing
+        // text-slate-900 (headings) reads white and bg-slate-50 reads near-black,
+        // recoloring every page through tokens instead of per-component edits.
+        slate: {
+          50: '#0c0c0e',
+          100: '#17171b',
+          200: '#242428',
+          300: '#2e2e33',
+          400: '#8a9097',
+          500: '#9aa0a6',
+          600: '#aeb4ba',
+          700: '#d2d5d9',
+          800: '#eceef0',
+          900: '#ffffff',
+          950: '#ffffff',
         },
       },
       maxWidth: {

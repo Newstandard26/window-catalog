@@ -28,7 +28,7 @@ export function Catalog() {
 
       <Container className="py-8">
         {anyPending && (
-          <div className="mb-6 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <div className="mb-6 flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mt-0.5 shrink-0">
               <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
             </svg>
@@ -49,8 +49,8 @@ export function Catalog() {
               onClick={() => setMaterial(m)}
               className={`rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-colors ${
                 material === m
-                  ? 'bg-brand-700 text-white'
-                  : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                  ? 'bg-brand-500 text-black'
+                  : 'border border-slate-300 bg-transparent text-slate-700 hover:bg-slate-100'
               }`}
             >
               {m}
@@ -102,7 +102,7 @@ export function Catalog() {
 
               <div className="mt-3 flex items-baseline justify-between">
                 {p.unitPrice == null ? (
-                  <span className="rounded bg-amber-100 px-2 py-1 text-sm font-semibold text-amber-700">
+                  <span className="rounded bg-amber-500/15 px-2 py-1 text-sm font-semibold text-amber-300">
                     Pricing pending
                   </span>
                 ) : (
@@ -193,7 +193,7 @@ export function Catalog() {
                         {p.energy.energyStar == null ? (
                           <span className="text-sm text-slate-400">Pending</span>
                         ) : p.energy.energyStar ? (
-                          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700">
+                          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-300">
                             <span className="h-2 w-2 rounded-full bg-emerald-500" /> ENERGY STAR
                           </span>
                         ) : (

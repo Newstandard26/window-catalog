@@ -313,7 +313,7 @@ function NewClientModal({
       setForm((f) => ({ ...f, [k]: e.target.value }))
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="nsr-card w-full max-w-lg p-6">
         <h3 className="text-xl font-bold text-slate-900">New Client</h3>
         <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">

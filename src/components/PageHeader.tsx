@@ -20,7 +20,7 @@ export function PageHeader({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
-            {subtitle && <p className="mt-1.5 text-base text-slate-300">{subtitle}</p>}
+            {subtitle && <p className="mt-1.5 text-base text-slate-400">{subtitle}</p>}
           </div>
           {actions && <div className="flex flex-wrap items-center gap-3">{actions}</div>}
         </div>

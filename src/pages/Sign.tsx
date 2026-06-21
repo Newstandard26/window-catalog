@@ -57,7 +57,7 @@ export function Sign() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 py-8">
+    <div className="paper min-h-screen bg-slate-100 py-8">
       <div className="mx-auto max-w-[8.5in] px-4">
         <ProposalDocument estimate={estimate} client={client} />
 

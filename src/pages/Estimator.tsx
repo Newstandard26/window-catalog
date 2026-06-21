@@ -734,7 +734,7 @@ function WindowSchedule({
               </div>
 
               <div className="mt-2 flex items-center justify-between text-sm text-slate-500">
-                <span>Line margin: <span className="font-semibold text-emerald-700">{currency(lineMargin)}</span></span>
+                <span>Line margin: <span className="font-semibold text-emerald-300">{currency(lineMargin)}</span></span>
                 {item.priceOverridden && (
                   <button
                     className="font-medium text-brand-700 hover:text-brand-800"
@@ -818,7 +818,7 @@ function EstimateSummary({
       {/* Build-up */}
       <dl className="mt-5 space-y-3 text-base">
         <Row label="Material cost" value={currency(materialCost)} muted />
-        <Row label={`Margin (${estimate.marginPct}%)`} value={currency(margin)} className="text-emerald-700" />
+        <Row label={`Margin (${estimate.marginPct}%)`} value={currency(margin)} className="text-emerald-300" />
         <Row label="Material price (sell)" value={currency(materialPrice)} />
         <Row label="Labor (untaxed)" value={currency(labor)} />
         <div className="border-t border-slate-100 pt-3">
@@ -832,7 +832,7 @@ function EstimateSummary({
                 type="number"
                 step={0.125}
                 min={0}
-                className="w-20 rounded border border-slate-300 py-1 pl-2 pr-6 text-sm"
+                className="w-20 rounded border border-slate-300 bg-transparent py-1 pl-2 pr-6 text-sm text-slate-900"
                 value={taxPercent}
                 onChange={(e) => onTaxChange(Number(e.target.value) / 100)}
               />
@@ -848,9 +848,9 @@ function EstimateSummary({
           <span className="text-base font-medium text-slate-500">Total</span>
           <span className="text-3xl font-bold tabular-nums text-brand-700">{currency(total)}</span>
         </div>
-        <div className="mt-3 flex items-center justify-between rounded-lg bg-emerald-50 px-3.5 py-2.5">
-          <span className="text-sm font-medium text-emerald-700">Est. profit</span>
-          <span className="text-lg font-bold tabular-nums text-emerald-700">{currency(margin)}</span>
+        <div className="mt-3 flex items-center justify-between rounded-lg bg-brand-500/10 px-3.5 py-2.5">
+          <span className="text-sm font-medium text-brand-500">Est. profit</span>
+          <span className="text-lg font-bold tabular-nums text-brand-500">{currency(margin)}</span>
         </div>
         <p className="mt-2 text-xs text-slate-400">
           Add labor with the Labor toggle in “Build a line.” Labor is included in the subtotal but
@@ -894,7 +894,7 @@ function SignLinkModal({
   onClose: () => void
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="nsr-card w-full max-w-lg p-6">
         {isDocusignConfigured() ? (
           <DocusignPanel estimate={estimate} client={client} onClose={onClose} />
@@ -992,11 +992,11 @@ function DocusignPanel({
       </div>
 
       {error && (
-        <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>
+        <div className="mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</div>
       )}
 
       {phase === 'sent' && (
-        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3.5 text-sm text-emerald-800">
+        <div className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-sm text-emerald-200">
           {mode === 'email' ? (
             <>Envelope sent — {email} will receive a DocuSign email to sign.</>
           ) : (
@@ -1094,7 +1094,7 @@ function BuiltinLinkPanel({
         </button>
       </div>
 
-      <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800">
+      <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-sm text-amber-200">
         <strong>Built-in signing (demo).</strong> DocuSign isn’t configured yet, and this
         localStorage build resolves the link on this device only. Set <code>VITE_SIGN_API_URL</code>{' '}
         to enable real DocuSign email delivery and cross-device signing.
@@ -1129,8 +1129,8 @@ function LockedEstimate({ estimate }: { estimate: Estimate }) {
         }
       />
       <Container className="py-8">
-        <div className="nsr-card mb-6 flex items-start gap-3 border-emerald-200 bg-emerald-50 p-6">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+        <div className="nsr-card mb-6 flex items-start gap-3 border-emerald-500/30 bg-emerald-500/10 p-6">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-300">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M20 6L9 17l-5-5" />
             </svg>
@@ -1166,7 +1166,7 @@ function LockedEstimate({ estimate }: { estimate: Estimate }) {
               <Row label="Total" value={currency(estimateTotal(estimate))} className="text-brand-700" />
             </div>
             <div className="mt-2">
-              <Row label="Est. profit" value={currency(estimateProfit(estimate))} className="text-emerald-700" />
+              <Row label="Est. profit" value={currency(estimateProfit(estimate))} className="text-brand-500" />
             </div>
           </div>
         </div>
@@ -1228,7 +1228,7 @@ function ProjectFiles({ estimate }: { estimate: Estimate }) {
           {files.map((f) => (
             <li key={f.id} className="flex items-center justify-between py-3">
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-600">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-500/15 text-rose-300">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                     <path d="M14 2v6h6" />
