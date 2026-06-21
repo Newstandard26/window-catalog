@@ -56,6 +56,33 @@ export interface CatalogProduct {
 export type MarginMode = 'margin' | 'markup'
 export type LineKind = 'material' | 'labor'
 
+/** Window/door operation styles a diagram can render. */
+export type WindowStyle =
+  | 'single-hung'
+  | 'double-hung'
+  | 'casement'
+  | 'awning'
+  | 'picture'
+  | 'slider'
+  | 'octagon'
+  | 'half-circle'
+  | 'bow'
+  | 'garden'
+  | 'patio-door'
+  | 'hinged-door'
+  | 'storm-door'
+  | 'unknown'
+
+/** One sub-unit of a mulled/multi-wide window (drawn side-by-side). */
+export interface WindowSection {
+  style: WindowStyle
+  grille?: string | null
+  handing?: 'L' | 'R' | null
+  /** Relative width weight across the mulled unit (defaults to equal). */
+  width?: number
+  label?: string
+}
+
 /** Captured when a client e-signs a proposal. */
 export interface SignatureRecord {
   signerName: string
@@ -96,6 +123,14 @@ export interface WindowItem {
   /** True when the sell price was set by hand, so a global margin change
    * won't silently overwrite it. */
   priceOverridden: boolean
+  /** Diagram spec (optional; drives the exported proposal's window diagram).
+   * Populated from catalog selection / quote import; falls back to inference. */
+  style?: WindowStyle
+  sizeBasis?: string | null
+  grille?: string | null
+  handing?: 'L' | 'R' | null
+  /** Section breakdown for mulled/multi-wide units. */
+  sections?: WindowSection[]
 }
 
 export interface Estimate {

@@ -1,6 +1,7 @@
 import type { Client, Estimate } from '../types'
 import { getProduct } from '../data/catalog'
 import { COMPANY } from '../data/company'
+import { WindowDiagram, inferWindowStyle } from './WindowDiagram'
 import {
   currency,
   estimateLabor,
@@ -71,6 +72,7 @@ export function ProposalDocument({
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-slate-300 text-left text-xs uppercase tracking-wide text-slate-500">
+              <th className="py-2 pr-2 font-semibold">Diagram</th>
               <th className="py-2 pr-2 font-semibold">Location</th>
               <th className="py-2 pr-2 font-semibold">Product</th>
               <th className="py-2 pr-2 font-semibold">Size</th>
@@ -82,8 +84,32 @@ export function ProposalDocument({
           <tbody>
             {estimate.items.map((item) => {
               const product = getProduct(item.productId)
+              const style =
+                item.style ??
+                inferWindowStyle(
+                  [product?.series, product?.configuration, product?.highlight, item.location]
+                    .filter(Boolean)
+                    .join(' '),
+                )
+              const grille = item.grille ?? product?.grilles
               return (
                 <tr key={item.id} className="border-b border-slate-100 align-top">
+                  <td className="py-2.5 pr-2">
+                    {item.kind === 'labor' ? (
+                      <span className="text-slate-300">—</span>
+                    ) : (
+                      <WindowDiagram
+                        style={style}
+                        widthIn={item.width}
+                        heightIn={item.height}
+                        sizeBasis={item.sizeBasis}
+                        grille={grille}
+                        handing={item.handing}
+                        sections={item.sections}
+                        maxFrame={54}
+                      />
+                    )}
+                  </td>
                   <td className="py-2.5 pr-2 text-slate-800">{item.location}</td>
                   <td className="py-2.5 pr-2 text-slate-600">
                     {item.kind === 'labor' ? 'Labor' : product ? `${product.brand} ${product.series}` : 'Custom'}
