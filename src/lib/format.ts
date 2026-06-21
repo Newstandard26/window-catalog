@@ -1,4 +1,11 @@
-import type { Estimate, MarginMode } from '../types'
+import type {
+  CustomLaborItem,
+  Estimate,
+  LaborSettings,
+  MarginMode,
+  WindowConstruction,
+  WindowItem,
+} from '../types'
 
 export const percent = (n: number) => `${Number(n.toFixed(3))}%`
 
@@ -31,37 +38,163 @@ export const shortDate = (iso: string) =>
     year: 'numeric',
   })
 
-const sumLines = (e: Estimate, kind: 'material' | 'labor' | 'all', field: 'unitPrice' | 'unitCost') =>
-  e.items.reduce((sum, item) => {
-    if (kind !== 'all' && item.kind !== kind) return sum
-    return sum + (item[field] ?? 0) * item.quantity
-  }, 0)
+// Window lines only (labor is never a window item in the global-margin model).
+const windowLines = (e: Estimate) => e.items.filter((it) => it.kind !== 'labor')
 
-/** Internal material cost (qty × unit cost). Never shown to clients. */
-export const estimateMaterialCost = (e: Estimate) => sumLines(e, 'material', 'unitCost')
+/* ----------------------------- Labor settings ----------------------------- */
 
-/** Material sell price (qty × unit price) — the taxable base. */
-export const estimateMaterialPrice = (e: Estimate) => sumLines(e, 'material', 'unitPrice')
+/** NSR / Base44 defaults: 2 carpenters × $75 = $150/hr, 2.0/1.5 default hours. */
+export const DEFAULT_LABOR: LaborSettings = {
+  crewSize: 2,
+  hourlyRate: 75,
+  newConstructionHrs: 2,
+  replacementHrs: 1.5,
+  overrideHours: null,
+}
 
-/** Labor sell total (qty × unit price of labor lines). Not taxable. */
-export const estimateLabor = (e: Estimate) => sumLines(e, 'labor', 'unitPrice')
+/** An estimate's labor settings with defaults filled in. */
+export const laborSettings = (e: Estimate): LaborSettings => ({ ...DEFAULT_LABOR, ...(e.labor ?? {}) })
 
-/** Gross profit = sell − cost across all lines (material + labor). */
-export const estimateProfit = (e: Estimate) =>
-  sumLines(e, 'all', 'unitPrice') - sumLines(e, 'all', 'unitCost')
+/** Combined crew rate, e.g. 2 carpenters × $75 = $150/hr. */
+export const laborRate = (e: Estimate): number => {
+  const s = laborSettings(e)
+  return s.crewSize * s.hourlyRate
+}
 
-/** Subtotal = every line's sell price (material + labor). */
-export const estimateSubtotal = (e: Estimate) => sumLines(e, 'all', 'unitPrice')
+/** Default install hours for an install type. */
+export const defaultHoursForType = (e: Estimate, type: WindowConstruction): number => {
+  const s = laborSettings(e)
+  return type === 'New Construction' ? s.newConstructionHrs : s.replacementHrs
+}
 
-/** Tax applies to taxable (material) lines only — labor is not taxed. */
-export const estimateTax = (e: Estimate) =>
-  estimateMaterialPrice(e) * (e.taxRate ?? 0)
+/** HRS/WIN for a line — its explicit value, else the install-type default. */
+export const lineHours = (
+  e: Estimate,
+  item: Pick<WindowItem, 'installType' | 'hrsPerWin'>,
+): number =>
+  item.hrsPerWin != null ? item.hrsPerWin : defaultHoursForType(e, item.installType ?? 'Replacement')
 
+/* -------------------------------- Materials ------------------------------- */
+
+/** Legacy internal material cost (qty × unit cost). */
+export const estimateMaterialCost = (e: Estimate) =>
+  windowLines(e).reduce((s, it) => s + (it.unitCost ?? 0) * it.quantity, 0)
+
+/** Materials subtotal (qty × unit price across window lines) — the taxable base. */
+export const estimateMaterialPrice = (e: Estimate) =>
+  windowLines(e).reduce((s, it) => s + (it.unitPrice ?? 0) * it.quantity, 0)
+
+/* ---------------------------------- Labor --------------------------------- */
+
+/** Σ (HRS/WIN × qty) across window lines. */
+export const estimateCalcHours = (e: Estimate): number =>
+  windowLines(e).reduce((s, it) => s + lineHours(e, it) * it.quantity, 0)
+
+/** Override hours when set (> 0), else the calculated hours. */
+export const estimateEffectiveHours = (e: Estimate): number => {
+  const o = laborSettings(e).overrideHours
+  return o != null && o > 0 ? o : estimateCalcHours(e)
+}
+
+/** Window-install labor = effective hours × crew rate. */
+export const estimateWindowLabor = (e: Estimate): number =>
+  estimateEffectiveHours(e) * laborRate(e)
+
+/** Dollar amount of one custom labor item (flat, or hours × rate). */
+export const customLaborAmount = (it: CustomLaborItem): number =>
+  it.mode === 'flat' ? it.amount || 0 : (it.hours || 0) * (it.rate || 0)
+
+/** Σ custom labor items. */
+export const estimateCustomLabor = (e: Estimate): number =>
+  (e.customLabor ?? []).reduce((s, it) => s + customLaborAmount(it), 0)
+
+/** Labor subtotal = window-install labor + custom labor. Always untaxed. */
+export const estimateLaborTotal = (e: Estimate): number =>
+  estimateWindowLabor(e) + estimateCustomLabor(e)
+
+/* ----------------------------- Build-up totals ---------------------------- */
+
+/** Tax applies to materials only — labor is never taxed. */
+export const estimateTax = (e: Estimate) => estimateMaterialPrice(e) * (e.taxRate ?? 0)
+
+/** Pre-profit subtotal = materials + labor + tax (the global-margin base). */
+export const estimatePreProfit = (e: Estimate) =>
+  estimateMaterialPrice(e) + estimateLaborTotal(e) + estimateTax(e)
+
+/** Back-compat alias: "subtotal" now means the pre-profit subtotal. */
+export const estimateSubtotal = (e: Estimate) => estimatePreProfit(e)
+
+/**
+ * Global margin/markup multiplier applied to the pre-profit subtotal.
+ *   margin:  Total = subtotal / (1 − pct)   → factor 1 / (1 − pct)
+ *   markup:  Total = subtotal × (1 + pct)   → factor (1 + pct)
+ * Margin pct is clamped below 100 to avoid divide-by-zero / negatives.
+ */
+export const marginFactor = (mode: MarginMode, pct: number): number => {
+  if (mode === 'markup') return 1 + (pct || 0) / 100
+  const safe = Math.min(Math.max(pct || 0, 0), 99.99)
+  return 1 / (1 - safe / 100)
+}
+
+/** Job total = pre-profit subtotal × global margin factor. */
 export const estimateTotal = (e: Estimate) =>
-  estimateSubtotal(e) + estimateTax(e)
+  estimatePreProfit(e) * marginFactor(e.marginMode, e.marginPct)
+
+/** Profit = Total − pre-profit subtotal (the global margin dollars). */
+export const estimateProfit = (e: Estimate) => estimateTotal(e) - estimatePreProfit(e)
 
 export const totalWindowCount = (e: Estimate) =>
-  e.items.reduce((sum, item) => (item.kind === 'labor' ? sum : sum + item.quantity), 0)
+  windowLines(e).reduce((sum, item) => sum + item.quantity, 0)
+
+/* --------------------------- Client proposal view ------------------------- */
+
+export interface ProposalWindowView {
+  item: WindowItem
+  unitPrice: number
+  lineTotal: number
+}
+export interface ProposalLaborView {
+  label: string
+  amount: number
+}
+export interface ClientProposal {
+  windows: ProposalWindowView[]
+  labor: ProposalLaborView[]
+  materials: number
+  laborTotal: number
+  subtotal: number
+  tax: number
+  total: number
+}
+
+/**
+ * Client-facing build-up. The global margin is folded uniformly into the
+ * displayed window and labor prices so the breakdown foots to the job Total
+ * without ever exposing cost, margin, or profit. Tax is back-solved as
+ * (Total − marked-up goods) so the columns always sum to Total.
+ */
+export function clientProposal(e: Estimate): ClientProposal {
+  const f = marginFactor(e.marginMode, e.marginPct)
+  const windows: ProposalWindowView[] = windowLines(e).map((item) => {
+    const unitPrice = round2(item.unitPrice * f)
+    return { item, unitPrice, lineTotal: round2(unitPrice * item.quantity) }
+  })
+
+  const labor: ProposalLaborView[] = []
+  const winLabor = estimateWindowLabor(e)
+  if (winLabor > 0) labor.push({ label: 'Installation labor', amount: round2(winLabor * f) })
+  for (const c of e.customLabor ?? []) {
+    const amt = customLaborAmount(c)
+    if (amt > 0) labor.push({ label: c.description || 'Labor', amount: round2(amt * f) })
+  }
+
+  const materials = round2(windows.reduce((s, w) => s + w.lineTotal, 0))
+  const laborTotal = round2(labor.reduce((s, l) => s + l.amount, 0))
+  const subtotal = round2(materials + laborTotal)
+  const total = round2(estimateTotal(e))
+  const tax = round2(total - subtotal)
+  return { windows, labor, materials, laborTotal, subtotal, tax, total }
+}
 
 /**
  * Phase 5: auto-name estimates as "{Client Name} — {Address} — {Date}" so they

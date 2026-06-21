@@ -73,6 +73,37 @@ export type WindowStyle =
   | 'storm-door'
   | 'unknown'
 
+/**
+ * Per-estimate labor settings (NSR / Base44 defaults). The crew rate is derived
+ * (crewSize × hourlyRate); default hours auto-fill HRS/WIN by install type.
+ */
+export interface LaborSettings {
+  /** Carpenters on the crew (default 2). */
+  crewSize: number
+  /** Hourly rate per carpenter (default 75 → combined $150/hr). */
+  hourlyRate: number
+  /** Default install hours per New Construction window (default 2.0). */
+  newConstructionHrs: number
+  /** Default install hours per Replacement window (default 1.5). */
+  replacementHrs: number
+  /** Optional manual override of the TOTAL install hours. null = use calc. */
+  overrideHours: number | null
+}
+
+/** An ad-hoc labor line beyond the per-window install calc (always untaxed). */
+export interface CustomLaborItem {
+  id: string
+  description: string
+  /** 'flat' = a fixed dollar amount; 'hours' = hours × rate. */
+  mode: 'flat' | 'hours'
+  /** Dollar amount when mode = 'flat'. */
+  amount: number
+  /** Hours when mode = 'hours'. */
+  hours: number
+  /** $/hr when mode = 'hours' (defaults to the crew labor rate). */
+  rate: number
+}
+
 /** One sub-unit of a mulled/multi-wide window (drawn side-by-side). */
 export interface WindowSection {
   style: WindowStyle
@@ -118,13 +149,19 @@ export interface WindowItem {
   /** Display name when the line isn't tied to a catalog product (e.g. imported). */
   productName?: string
   quantity: number
-  /** What NSR pays per unit (internal — never shown to the client). */
+  /** Legacy internal cost. Kept in sync with unitPrice in the global-margin
+   * model (cost no longer drives a per-line sell price). */
   unitCost: number
-  /** What the client is charged per unit (sell price). */
+  /** Per-unit material price that feeds the Materials subtotal. The single
+   * global job margin (not a per-line markup) provides the profit. */
   unitPrice: number
-  /** True when the sell price was set by hand, so a global margin change
-   * won't silently overwrite it. */
+  /** Legacy per-line override flag (unused in the global-margin model). */
   priceOverridden: boolean
+  /** Install type — sets the default install hours for this window line. */
+  installType?: WindowConstruction
+  /** Install hours for ONE of this window (HRS/WIN). Falls back to the
+   * install-type default when unset. */
+  hrsPerWin?: number
   /** Diagram spec (optional; drives the exported proposal's window diagram).
    * Populated from catalog selection / quote import; falls back to inference. */
   style?: WindowStyle
@@ -142,10 +179,16 @@ export interface Estimate {
   address: string
   status: EstimateStatus
   items: WindowItem[]
+  /** Tax rate (decimal). Applies to materials only — labor is never taxed. */
   taxRate: number
-  /** Margin vs markup, and the single percentage used to derive sell prices. */
+  /** Margin vs markup, and the single global percentage applied to the whole
+   * pre-profit subtotal (materials + labor + tax). */
   marginMode: MarginMode
   marginPct: number
+  /** Labor settings (crew rate + default hours + optional total override). */
+  labor?: LaborSettings
+  /** Ad-hoc labor lines added on top of the per-window install calc. */
+  customLabor?: CustomLaborItem[]
   /** Unguessable token for the public signing link (set when sent). */
   signatureToken?: string | null
   sentForSignatureAt?: string | null

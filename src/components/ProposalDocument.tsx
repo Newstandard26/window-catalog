@@ -2,21 +2,15 @@ import type { Client, Estimate } from '../types'
 import { getProduct } from '../data/catalog'
 import { COMPANY } from '../data/company'
 import { WindowDiagram, inferWindowStyle } from './WindowDiagram'
-import {
-  currency,
-  estimateLabor,
-  estimateMaterialPrice,
-  estimateSubtotal,
-  estimateTax,
-  estimateTotal,
-  shortDate,
-} from '../lib/format'
+import { clientProposal, currency, shortDate } from '../lib/format'
 
 /**
  * The client-facing proposal document (letterhead + schedule + totals). Shared
  * by the printable proposal and the public signing page.
  *
- * IMPORTANT: sell prices and totals only — never cost, margin, or profit.
+ * IMPORTANT: client prices and totals only — never cost, margin, or profit. The
+ * global job margin is folded uniformly into every line so the breakdown foots
+ * to the Total without exposing the markup.
  */
 export function ProposalDocument({
   estimate,
@@ -25,11 +19,8 @@ export function ProposalDocument({
   estimate: Estimate
   client?: Client
 }) {
-  const materialPrice = estimateMaterialPrice(estimate)
-  const labor = estimateLabor(estimate)
-  const subtotal = estimateSubtotal(estimate)
-  const tax = estimateTax(estimate)
-  const total = estimateTotal(estimate)
+  const view = clientProposal(estimate)
+  const { windows, labor, materials, laborTotal, subtotal, tax, total } = view
 
   return (
     <article className="mx-auto max-w-[8.5in] bg-white p-[0.75in] shadow-card print:shadow-none">
@@ -82,7 +73,7 @@ export function ProposalDocument({
             </tr>
           </thead>
           <tbody>
-            {estimate.items.map((item) => {
+            {windows.map(({ item, unitPrice, lineTotal }) => {
               const product = getProduct(item.productId)
               const style =
                 item.style ??
@@ -95,40 +86,43 @@ export function ProposalDocument({
               return (
                 <tr key={item.id} className="border-b border-slate-100 align-top">
                   <td className="py-2.5 pr-2">
-                    {item.kind === 'labor' ? (
-                      <span className="text-slate-300">—</span>
-                    ) : (
-                      <WindowDiagram
-                        style={style}
-                        widthIn={item.width}
-                        heightIn={item.height}
-                        sizeBasis={item.sizeBasis}
-                        grille={grille}
-                        handing={item.handing}
-                        sections={item.sections}
-                        maxFrame={54}
-                      />
-                    )}
+                    <WindowDiagram
+                      style={style}
+                      widthIn={item.width}
+                      heightIn={item.height}
+                      sizeBasis={item.sizeBasis}
+                      grille={grille}
+                      handing={item.handing}
+                      sections={item.sections}
+                      maxFrame={54}
+                    />
                   </td>
                   <td className="py-2.5 pr-2 text-slate-800">{item.location}</td>
                   <td className="py-2.5 pr-2 text-slate-600">
-                    {item.kind === 'labor'
-                      ? 'Labor'
-                      : product
-                        ? `${product.brand} ${product.series}`
-                        : item.productName || 'Custom'}
+                    {product ? `${product.brand} ${product.series}` : item.productName || 'Custom'}
                   </td>
-                  <td className="py-2.5 pr-2 text-slate-600">
-                    {item.kind === 'labor' ? '—' : `${item.width}" × ${item.height}"`}
-                  </td>
+                  <td className="py-2.5 pr-2 text-slate-600">{`${item.width}" × ${item.height}"`}</td>
                   <td className="py-2.5 pr-2 text-right tabular-nums text-slate-700">{item.quantity}</td>
-                  <td className="py-2.5 pr-2 text-right tabular-nums text-slate-700">{currency(item.unitPrice)}</td>
+                  <td className="py-2.5 pr-2 text-right tabular-nums text-slate-700">{currency(unitPrice)}</td>
                   <td className="py-2.5 text-right tabular-nums font-semibold text-slate-900">
-                    {currency(item.unitPrice * item.quantity)}
+                    {currency(lineTotal)}
                   </td>
                 </tr>
               )
             })}
+            {labor.map((l, i) => (
+              <tr key={`labor-${i}`} className="border-b border-slate-100 align-top">
+                <td className="py-2.5 pr-2 text-slate-300">—</td>
+                <td className="py-2.5 pr-2 text-slate-800">{l.label}</td>
+                <td className="py-2.5 pr-2 text-slate-600">Labor</td>
+                <td className="py-2.5 pr-2 text-slate-600">—</td>
+                <td className="py-2.5 pr-2 text-right tabular-nums text-slate-700">1</td>
+                <td className="py-2.5 pr-2 text-right tabular-nums text-slate-700">{currency(l.amount)}</td>
+                <td className="py-2.5 text-right tabular-nums font-semibold text-slate-900">
+                  {currency(l.amount)}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </section>
@@ -137,12 +131,12 @@ export function ProposalDocument({
         <dl className="w-72 space-y-2 text-sm">
           <div className="flex justify-between">
             <dt className="text-slate-500">Materials</dt>
-            <dd className="tabular-nums text-slate-800">{currency(materialPrice)}</dd>
+            <dd className="tabular-nums text-slate-800">{currency(materials)}</dd>
           </div>
-          {labor > 0 && (
+          {laborTotal > 0 && (
             <div className="flex justify-between">
               <dt className="text-slate-500">Labor</dt>
-              <dd className="tabular-nums text-slate-800">{currency(labor)}</dd>
+              <dd className="tabular-nums text-slate-800">{currency(laborTotal)}</dd>
             </div>
           )}
           <div className="flex justify-between">

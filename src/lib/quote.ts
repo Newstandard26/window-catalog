@@ -1,7 +1,6 @@
-import type { WindowItem, WindowSection, WindowStyle } from '../types'
+import type { WindowConstruction, WindowItem, WindowSection, WindowStyle } from '../types'
 import { inferWindowStyle } from '../components/WindowDiagram'
-import { deriveSellPrice } from './format'
-import type { MarginMode } from '../types'
+import { DEFAULT_LABOR } from './format'
 
 /**
  * Vendor-quote import client. Uploads a PDF/image to the parse-quote backend
@@ -93,18 +92,19 @@ export async function parseQuote(file: File): Promise<ParseResult> {
 
 const normStyle = (s?: string | null): WindowStyle => inferWindowStyle(s ?? '')
 
-/** Map a reviewed parsed line onto an estimate WindowItem (cost drives margin). */
-export function parsedLineToItem(
-  line: ParsedLine,
-  mode: MarginMode,
-  pct: number,
-): Omit<WindowItem, 'id'> {
+/**
+ * Map a reviewed parsed line onto an estimate window item. In the global-margin
+ * model the vendor per-unit cost becomes the line's material price (the single
+ * job margin adds the profit). Imported windows default to Replacement hours.
+ */
+export function parsedLineToItem(line: ParsedLine): Omit<WindowItem, 'id'> {
   const unitCost = Number(line.unitCost) || 0
   const sections: WindowSection[] | undefined =
     line.sections && line.sections.length > 0
       ? line.sections.map((s) => ({ style: normStyle(s.style), label: s.label }))
       : undefined
   const name = [line.brand, line.series, line.style].filter(Boolean).join(' ').trim()
+  const installType: WindowConstruction = line.type === 'New Construction' ? 'New Construction' : 'Replacement'
   return {
     kind: 'material',
     location: line.location || name || 'Imported window',
@@ -114,8 +114,11 @@ export function parsedLineToItem(
     productName: name || undefined,
     quantity: Math.max(1, Number(line.qty) || 1),
     unitCost,
-    unitPrice: deriveSellPrice(unitCost, mode, pct),
+    unitPrice: unitCost,
     priceOverridden: false,
+    installType,
+    hrsPerWin:
+      installType === 'New Construction' ? DEFAULT_LABOR.newConstructionHrs : DEFAULT_LABOR.replacementHrs,
     style: normStyle(line.style),
     sizeBasis: line.sizeBasis ?? null,
     grille: line.grille ?? null,

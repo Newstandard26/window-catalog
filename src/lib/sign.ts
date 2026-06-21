@@ -1,15 +1,7 @@
 import type { Client, Estimate } from '../types'
 import { getProduct } from '../data/catalog'
 import { COMPANY } from '../data/company'
-import {
-  currency,
-  estimateLabor,
-  estimateMaterialPrice,
-  estimateSubtotal,
-  estimateTax,
-  estimateTotal,
-  shortDate,
-} from './format'
+import { clientProposal, currency, shortDate } from './format'
 
 /**
  * E-signature provider seam.
@@ -82,6 +74,28 @@ export function buildProposalPayload(
   mode: SignMode,
   returnUrl?: string,
 ): ProposalPayload {
+  // Client-facing build-up: the global margin is folded into every line so the
+  // table foots to the Total without exposing cost or margin.
+  const view = clientProposal(estimate)
+  const windowLines: ProposalLine[] = view.windows.map(({ item, unitPrice, lineTotal }) => {
+    const product = getProduct(item.productId)
+    return {
+      location: item.location || '—',
+      product: product ? `${product.brand} ${product.series}` : item.productName || 'Custom',
+      size: `${item.width}" × ${item.height}"`,
+      qty: item.quantity,
+      unitPrice: currency(unitPrice),
+      lineTotal: currency(lineTotal),
+    }
+  })
+  const laborLines: ProposalLine[] = view.labor.map((l) => ({
+    location: l.label,
+    product: 'Labor',
+    size: '—',
+    qty: 1,
+    unitPrice: currency(l.amount),
+    lineTotal: currency(l.amount),
+  }))
   return {
     estimateId: estimate.id,
     estimateName: estimate.name,
@@ -91,27 +105,12 @@ export function buildProposalPayload(
     companyName: COMPANY.name,
     companyAddress: COMPANY.address,
     companyPhone: COMPANY.phone,
-    lines: estimate.items.map((item) => {
-      const product = getProduct(item.productId)
-      return {
-        location: item.location || '—',
-        product:
-          item.kind === 'labor'
-            ? 'Labor'
-            : product
-              ? `${product.brand} ${product.series}`
-              : 'Custom',
-        size: item.kind === 'labor' ? '—' : `${item.width}" × ${item.height}"`,
-        qty: item.quantity,
-        unitPrice: currency(item.unitPrice),
-        lineTotal: currency(item.unitPrice * item.quantity),
-      }
-    }),
-    materials: currency(estimateMaterialPrice(estimate)),
-    labor: currency(estimateLabor(estimate)),
-    subtotal: currency(estimateSubtotal(estimate)),
-    tax: currency(estimateTax(estimate)),
-    total: currency(estimateTotal(estimate)),
+    lines: [...windowLines, ...laborLines],
+    materials: currency(view.materials),
+    labor: currency(view.laborTotal),
+    subtotal: currency(view.subtotal),
+    tax: currency(view.tax),
+    total: currency(view.total),
     signer,
     mode,
     returnUrl,

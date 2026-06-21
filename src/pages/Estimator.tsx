@@ -8,14 +8,23 @@ import { CATALOG, getProduct } from '../data/catalog'
 import {
   autoEstimateName,
   currency,
-  deriveSellPrice,
-  estimateLabor,
-  estimateMaterialCost,
+  customLaborAmount,
+  DEFAULT_LABOR,
+  defaultHoursForType,
+  estimateCalcHours,
+  estimateCustomLabor,
+  estimateEffectiveHours,
+  estimateLaborTotal,
   estimateMaterialPrice,
+  estimatePreProfit,
   estimateProfit,
   estimateSubtotal,
   estimateTax,
   estimateTotal,
+  estimateWindowLabor,
+  laborRate,
+  laborSettings,
+  lineHours,
   shortDate,
   totalWindowCount,
 } from '../lib/format'
@@ -38,11 +47,14 @@ import {
 import {
   PIPELINE,
   type Client,
+  type CustomLaborItem,
   type Estimate,
   type EstimateStatus,
+  type LaborSettings,
   type LineKind,
   type MarginMode,
   type SignedFile,
+  type WindowConstruction,
   type WindowItem,
 } from '../types'
 
@@ -67,15 +79,19 @@ export function Estimator() {
   return <DraftEstimator />
 }
 
-/** Build a line item, deriving the sell price from cost + margin. */
-function makeItem(
-  partial: Pick<WindowItem, 'kind' | 'location' | 'width' | 'height' | 'productId' | 'quantity' | 'unitCost'>,
-  mode: MarginMode,
-  pct: number,
+/** Build a window line. In the global-margin model the unit price is the
+ * material price; the single job margin (applied to the whole subtotal)
+ * provides the profit, so cost mirrors price. */
+function makeWindowItem(
+  partial: Pick<
+    WindowItem,
+    'location' | 'width' | 'height' | 'productId' | 'quantity' | 'unitPrice' | 'installType' | 'hrsPerWin'
+  >,
 ): Omit<WindowItem, 'id'> {
   return {
+    kind: 'material',
     ...partial,
-    unitPrice: deriveSellPrice(partial.unitCost, mode, pct),
+    unitCost: partial.unitPrice,
     priceOverridden: false,
   }
 }
@@ -98,6 +114,8 @@ function DraftEstimator() {
     taxRate: 0.0825,
     marginMode: 'margin' as MarginMode,
     marginPct: 35,
+    labor: { ...DEFAULT_LABOR } as LaborSettings,
+    customLabor: [] as CustomLaborItem[],
     nameEdited: false,
   }))
 
@@ -111,11 +129,13 @@ function DraftEstimator() {
     taxRate: draft.taxRate,
     marginMode: draft.marginMode,
     marginPct: draft.marginPct,
+    labor: draft.labor,
+    customLabor: draft.customLabor,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
 
-  const persist = (items: Omit<WindowItem, 'id'>[]) => {
+  const persist = (items: Omit<WindowItem, 'id'>[], customLabor = draft.customLabor) => {
     const created = addEstimate({
       name: draft.name,
       clientId: draft.clientId,
@@ -124,6 +144,8 @@ function DraftEstimator() {
       taxRate: draft.taxRate,
       marginMode: draft.marginMode,
       marginPct: draft.marginPct,
+      labor: draft.labor,
+      customLabor,
       items: items.map((it) => ({ ...it, id: newId('w') })),
     })
     navigate(`/estimator/${created.id}`, { replace: true })
@@ -174,6 +196,19 @@ function DraftEstimator() {
           onRemoveItem={() => {}}
           onTaxChange={(taxRate) => setDraft((d) => ({ ...d, taxRate }))}
           onMarginChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
+          onLaborChange={(patch) => setDraft((d) => ({ ...d, labor: { ...d.labor, ...patch } }))}
+          onAddCustomLabor={(item) =>
+            persist([], [...draft.customLabor, { ...item, id: newId('lab') }])
+          }
+          onUpdateCustomLabor={(laborId, patch) =>
+            setDraft((d) => ({
+              ...d,
+              customLabor: d.customLabor.map((l) => (l.id === laborId ? { ...l, ...patch } : l)),
+            }))
+          }
+          onRemoveCustomLabor={(laborId) =>
+            setDraft((d) => ({ ...d, customLabor: d.customLabor.filter((l) => l.id !== laborId) }))
+          }
         />
       </Container>
     </>
@@ -189,6 +224,10 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
     updateEstimate,
     removeEstimate,
     setEstimateMargin,
+    setLaborSettings,
+    addCustomLabor,
+    updateCustomLabor,
+    removeCustomLabor,
     sendForSignature,
     addWindowItem,
     updateWindowItem,
@@ -272,6 +311,10 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
           onRemoveItem={(itemId) => removeWindowItem(estimate.id, itemId)}
           onTaxChange={(taxRate) => updateEstimate(estimate.id, { taxRate })}
           onMarginChange={(patch) => setEstimateMargin(estimate.id, patch)}
+          onLaborChange={(patch) => setLaborSettings(estimate.id, patch)}
+          onAddCustomLabor={(item) => addCustomLabor(estimate.id, item)}
+          onUpdateCustomLabor={(laborId, patch) => updateCustomLabor(estimate.id, laborId, patch)}
+          onRemoveCustomLabor={(laborId) => removeCustomLabor(estimate.id, laborId)}
         />
       </Container>
     </>
@@ -347,6 +390,13 @@ function MetaBar({
   )
 }
 
+interface LaborHandlers {
+  onLaborChange: (patch: Partial<LaborSettings>) => void
+  onAddCustomLabor: (item: Omit<CustomLaborItem, 'id'>) => void
+  onUpdateCustomLabor: (laborId: string, patch: Partial<CustomLaborItem>) => void
+  onRemoveCustomLabor: (laborId: string) => void
+}
+
 function EstimatorBody({
   estimate,
   onAddItem,
@@ -354,6 +404,10 @@ function EstimatorBody({
   onRemoveItem,
   onTaxChange,
   onMarginChange,
+  onLaborChange,
+  onAddCustomLabor,
+  onUpdateCustomLabor,
+  onRemoveCustomLabor,
 }: {
   estimate: Estimate
   onAddItem: (item: Omit<WindowItem, 'id'>) => void
@@ -361,25 +415,23 @@ function EstimatorBody({
   onRemoveItem: (itemId: string) => void
   onTaxChange: (rate: number) => void
   onMarginChange: (patch: { marginMode?: MarginMode; marginPct?: number }) => void
-}) {
+} & LaborHandlers) {
   const [toolsOpen, setToolsOpen] = useState(estimate.items.length === 0)
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
       <div className="space-y-6 lg:col-span-4">
         <ProductBuilder
-          marginMode={estimate.marginMode}
-          marginPct={estimate.marginPct}
+          estimate={estimate}
           onAdd={(item) => {
             onAddItem(item)
             setToolsOpen(false)
           }}
+          onAddCustomLabor={onAddCustomLabor}
         />
         <AddItemsTools
           open={toolsOpen}
           onToggle={() => setToolsOpen((v) => !v)}
-          marginMode={estimate.marginMode}
-          marginPct={estimate.marginPct}
           onAddItems={(items) => {
             items.forEach(onAddItem)
             setToolsOpen(false)
@@ -387,165 +439,312 @@ function EstimatorBody({
         />
       </div>
 
-      <div className="lg:col-span-5">
+      <div className="space-y-6 lg:col-span-5">
         <WindowSchedule estimate={estimate} onUpdateItem={onUpdateItem} onRemove={onRemoveItem} />
+        <CustomLaborList
+          estimate={estimate}
+          onUpdate={onUpdateCustomLabor}
+          onRemove={onRemoveCustomLabor}
+        />
       </div>
 
       <div className="lg:col-span-3">
-        <EstimateSummary estimate={estimate} onTaxChange={onTaxChange} onMarginChange={onMarginChange} />
+        <EstimateSummary
+          estimate={estimate}
+          onTaxChange={onTaxChange}
+          onMarginChange={onMarginChange}
+          onLaborChange={onLaborChange}
+        />
       </div>
     </div>
   )
 }
 
 function ProductBuilder({
-  marginMode,
-  marginPct,
+  estimate,
+  onAdd,
+  onAddCustomLabor,
+}: {
+  estimate: Estimate
+  onAdd: (item: Omit<WindowItem, 'id'>) => void
+  onAddCustomLabor: (item: Omit<CustomLaborItem, 'id'>) => void
+}) {
+  const [tab, setTab] = useState<LineKind>('material')
+
+  return (
+    <div className="nsr-card p-6">
+      <h2 className="text-lg font-bold text-slate-900">Build a line</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        Add windows (with install hours) or custom labor. One global margin is applied to the whole job.
+      </p>
+
+      {/* Window vs Labor */}
+      <div className="mt-4 flex gap-2">
+        {(['material', 'labor'] as LineKind[]).map((k) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            className={`flex-1 rounded-md px-2 py-1.5 text-sm font-semibold ${
+              tab === k ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {k === 'material' ? 'Window' : 'Custom labor'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'material' ? (
+        <WindowForm estimate={estimate} onAdd={onAdd} />
+      ) : (
+        <CustomLaborForm estimate={estimate} onAdd={onAddCustomLabor} />
+      )}
+    </div>
+  )
+}
+
+function WindowForm({
+  estimate,
   onAdd,
 }: {
-  marginMode: MarginMode
-  marginPct: number
+  estimate: Estimate
   onAdd: (item: Omit<WindowItem, 'id'>) => void
 }) {
-  const [form, setForm] = useState({
-    kind: 'material' as LineKind,
+  const [form, setForm] = useState(() => ({
     location: '',
     width: 36,
     height: 60,
     productId: CATALOG[0].id,
     quantity: 1,
-    unitCost: CATALOG[0].unitCost ?? 0,
-  })
+    unitPrice: CATALOG[0].unitCost ?? 0,
+    installType: 'Replacement' as WindowConstruction,
+    hrsPerWin: defaultHoursForType(estimate, 'Replacement'),
+  }))
 
-  const isLabor = form.kind === 'labor'
-
-  // Task 0b: selecting a product auto-fills its cost from the catalog.
+  // Selecting a product auto-fills its cost from the catalog.
   const onProduct = (productId: string) => {
     const p = getProduct(productId)
-    setForm((f) => ({ ...f, productId, unitCost: p?.unitCost ?? 0 }))
+    setForm((f) => ({ ...f, productId, unitPrice: p?.unitCost ?? 0 }))
   }
 
-  const setKind = (kind: LineKind) =>
-    setForm((f) => ({ ...f, kind, location: kind === 'labor' && !f.location ? 'Installation labor' : f.location }))
-
-  const sell = deriveSellPrice(form.unitCost, marginMode, marginPct)
+  // Switching install type auto-fills the default HRS/WIN (still overridable).
+  const onInstallType = (installType: WindowConstruction) =>
+    setForm((f) => ({ ...f, installType, hrsPerWin: defaultHoursForType(estimate, installType) }))
 
   const submit = () => {
     onAdd(
-      makeItem(
-        {
-          ...form,
-          location: form.location.trim() || (isLabor ? 'Labor' : 'New Window'),
-          productId: isLabor ? '' : form.productId,
-          width: isLabor ? 0 : form.width,
-          height: isLabor ? 0 : form.height,
-        },
-        marginMode,
-        marginPct,
-      ),
+      makeWindowItem({
+        location: form.location.trim() || 'New Window',
+        width: form.width,
+        height: form.height,
+        productId: form.productId,
+        quantity: Math.max(1, form.quantity),
+        unitPrice: form.unitPrice,
+        installType: form.installType,
+        hrsPerWin: form.hrsPerWin,
+      }),
     )
     setForm((f) => ({ ...f, location: '', quantity: 1 }))
   }
 
   return (
-    <div className="nsr-card p-6">
-      <h2 className="text-lg font-bold text-slate-900">Build a line</h2>
-      <p className="mt-1 text-sm text-slate-500">Sell price is derived from cost + margin.</p>
+    <div className="mt-4 space-y-4">
+      <div>
+        <label className="field-label">Location / label</label>
+        <input
+          className="field"
+          placeholder="e.g. Living Room"
+          value={form.location}
+          onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+        />
+      </div>
 
-      {/* Material vs Labor */}
-      <div className="mt-4 flex gap-2">
-        {(['material', 'labor'] as LineKind[]).map((k) => (
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="field-label">Width (in)</label>
+          <input
+            type="number"
+            className="field"
+            value={form.width}
+            onChange={(e) => setForm((f) => ({ ...f, width: Number(e.target.value) }))}
+          />
+        </div>
+        <div>
+          <label className="field-label">Height (in)</label>
+          <input
+            type="number"
+            className="field"
+            value={form.height}
+            onChange={(e) => setForm((f) => ({ ...f, height: Number(e.target.value) }))}
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="field-label">Product</label>
+        <select className="field" value={form.productId} onChange={(e) => onProduct(e.target.value)}>
+          {CATALOG.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.brand} {p.series}
+              {p.unitCost == null ? ' — cost TBD' : ` — cost ${currency(p.unitCost)}`}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="field-label">Install type</label>
+          <select
+            className="field"
+            value={form.installType}
+            onChange={(e) => onInstallType(e.target.value as WindowConstruction)}
+          >
+            <option value="Replacement">Replacement</option>
+            <option value="New Construction">New Construction</option>
+          </select>
+        </div>
+        <div>
+          <label className="field-label">Hrs / window</label>
+          <input
+            type="number"
+            min={0}
+            step={0.25}
+            className="field"
+            value={form.hrsPerWin}
+            onChange={(e) => setForm((f) => ({ ...f, hrsPerWin: Math.max(0, Number(e.target.value)) }))}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="field-label">Quantity</label>
+          <input
+            type="number"
+            min={1}
+            className="field"
+            value={form.quantity}
+            onChange={(e) => setForm((f) => ({ ...f, quantity: Math.max(1, Number(e.target.value)) }))}
+          />
+        </div>
+        <div>
+          <label className="field-label">Unit price</label>
+          <input
+            type="number"
+            className="field"
+            value={form.unitPrice}
+            onChange={(e) => setForm((f) => ({ ...f, unitPrice: Number(e.target.value) }))}
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3.5 py-2.5 text-sm">
+        <span className="text-slate-500">
+          {form.hrsPerWin}h × {form.quantity} install
+        </span>
+        <span className="font-bold tabular-nums text-brand-700">
+          {currency(form.unitPrice * form.quantity)}
+        </span>
+      </div>
+      <button className="btn-primary w-full" onClick={submit}>
+        + Add window to schedule
+      </button>
+    </div>
+  )
+}
+
+function CustomLaborForm({
+  estimate,
+  onAdd,
+}: {
+  estimate: Estimate
+  onAdd: (item: Omit<CustomLaborItem, 'id'>) => void
+}) {
+  const rate = laborRate(estimate)
+  const [form, setForm] = useState<Omit<CustomLaborItem, 'id'>>({
+    description: '',
+    mode: 'flat',
+    amount: 0,
+    hours: 0,
+    rate,
+  })
+  const amount = customLaborAmount({ id: '', ...form })
+
+  const submit = () => {
+    onAdd({ ...form, description: form.description.trim() || 'Custom labor' })
+    setForm((f) => ({ ...f, description: '', amount: 0, hours: 0 }))
+  }
+
+  return (
+    <div className="mt-4 space-y-4">
+      <div>
+        <label className="field-label">Description</label>
+        <input
+          className="field"
+          placeholder="e.g. Trim carpentry, haul-away"
+          value={form.description}
+          onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+        />
+      </div>
+
+      <div className="flex gap-2">
+        {(['flat', 'hours'] as const).map((m) => (
           <button
-            key={k}
-            onClick={() => setKind(k)}
-            className={`flex-1 rounded-md px-2 py-1.5 text-sm font-semibold capitalize ${
-              form.kind === k ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-600'
+            key={m}
+            onClick={() => setForm((f) => ({ ...f, mode: m }))}
+            className={`flex-1 rounded-md px-2 py-1.5 text-sm font-semibold ${
+              form.mode === m ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-600'
             }`}
           >
-            {k}
+            {m === 'flat' ? 'Flat price' : 'Hours × rate'}
           </button>
         ))}
       </div>
 
-      <div className="mt-4 space-y-4">
+      {form.mode === 'flat' ? (
         <div>
-          <label className="field-label">{isLabor ? 'Labor description' : 'Location / label'}</label>
+          <label className="field-label">Amount</label>
           <input
+            type="number"
+            min={0}
             className="field"
-            placeholder={isLabor ? 'e.g. Installation labor' : 'e.g. Living Room'}
-            value={form.location}
-            onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+            value={form.amount}
+            onChange={(e) => setForm((f) => ({ ...f, amount: Math.max(0, Number(e.target.value)) }))}
           />
         </div>
-
-        {!isLabor && (
-          <>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="field-label">Width (in)</label>
-                <input
-                  type="number"
-                  className="field"
-                  value={form.width}
-                  onChange={(e) => setForm((f) => ({ ...f, width: Number(e.target.value) }))}
-                />
-              </div>
-              <div>
-                <label className="field-label">Height (in)</label>
-                <input
-                  type="number"
-                  className="field"
-                  value={form.height}
-                  onChange={(e) => setForm((f) => ({ ...f, height: Number(e.target.value) }))}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="field-label">Product</label>
-              <select className="field" value={form.productId} onChange={(e) => onProduct(e.target.value)}>
-                {CATALOG.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.brand} {p.series}
-                    {p.unitCost == null ? ' — cost TBD' : ` — cost ${currency(p.unitCost)}`}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </>
-        )}
-
+      ) : (
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="field-label">{isLabor ? 'Hours / units' : 'Quantity'}</label>
+            <label className="field-label">Hours</label>
             <input
               type="number"
-              min={1}
+              min={0}
+              step={0.25}
               className="field"
-              value={form.quantity}
-              onChange={(e) => setForm((f) => ({ ...f, quantity: Math.max(1, Number(e.target.value)) }))}
+              value={form.hours}
+              onChange={(e) => setForm((f) => ({ ...f, hours: Math.max(0, Number(e.target.value)) }))}
             />
           </div>
           <div>
-            <label className="field-label">{isLabor ? 'Cost / unit' : 'Unit cost'}</label>
+            <label className="field-label">Rate ($/hr)</label>
             <input
               type="number"
+              min={0}
               className="field"
-              value={form.unitCost}
-              onChange={(e) => setForm((f) => ({ ...f, unitCost: Number(e.target.value) }))}
+              value={form.rate}
+              onChange={(e) => setForm((f) => ({ ...f, rate: Math.max(0, Number(e.target.value)) }))}
             />
           </div>
         </div>
-        <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3.5 py-2.5 text-sm">
-          <span className="text-slate-500">
-            Sell @ {marginPct}% {marginMode}
-            {isLabor && ' · not taxed'}
-          </span>
-          <span className="font-bold tabular-nums text-brand-700">{currency(sell)}</span>
-        </div>
-        <button className="btn-primary w-full" onClick={submit}>
-          + Add to schedule
-        </button>
+      )}
+
+      <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3.5 py-2.5 text-sm">
+        <span className="text-slate-500">Labor total · not taxed</span>
+        <span className="font-bold tabular-nums text-brand-700">{currency(amount)}</span>
       </div>
+      <button className="btn-primary w-full" onClick={submit}>
+        + Add labor item
+      </button>
     </div>
   )
 }
@@ -554,14 +753,10 @@ function AddItemsTools({
   open,
   onToggle,
   onAddItems,
-  marginMode,
-  marginPct,
 }: {
   open: boolean
   onToggle: () => void
   onAddItems: (items: Omit<WindowItem, 'id'>[]) => void
-  marginMode: MarginMode
-  marginPct: number
 }) {
   const [importOpen, setImportOpen] = useState(false)
   const soon = [
@@ -634,8 +829,6 @@ function AddItemsTools({
       )}
       {importOpen && (
         <ImportQuoteModal
-          marginMode={marginMode}
-          marginPct={marginPct}
           onClose={() => setImportOpen(false)}
           onAdd={(items) => {
             onAddItems(items)
@@ -653,13 +846,9 @@ interface ReviewRow {
 }
 
 function ImportQuoteModal({
-  marginMode,
-  marginPct,
   onClose,
   onAdd,
 }: {
-  marginMode: MarginMode
-  marginPct: number
   onClose: () => void
   onAdd: (items: Omit<WindowItem, 'id'>[]) => void
 }) {
@@ -700,7 +889,7 @@ function ImportQuoteModal({
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, include: !r.include } : r)))
 
   const chosen = rows.filter((r) => r.include)
-  const confirm = () => onAdd(chosen.map((r) => parsedLineToItem(r.line, marginMode, marginPct)))
+  const confirm = () => onAdd(chosen.map((r) => parsedLineToItem(r.line)))
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
@@ -886,14 +1075,9 @@ function WindowSchedule({
     )
   }
 
-  const setCost = (item: WindowItem, unitCost: number) => {
-    // Recompute the sell price unless this line was hand-overridden.
-    const patch: Partial<WindowItem> = { unitCost }
-    if (!item.priceOverridden) {
-      patch.unitPrice = deriveSellPrice(unitCost, estimate.marginMode, estimate.marginPct)
-    }
-    onUpdateItem(item.id, patch)
-  }
+  const setPrice = (item: WindowItem, unitPrice: number) =>
+    // Cost mirrors price in the global-margin model.
+    onUpdateItem(item.id, { unitPrice, unitCost: unitPrice })
 
   return (
     <div className="nsr-card overflow-hidden">
@@ -904,28 +1088,14 @@ function WindowSchedule({
       <div className="divide-y divide-slate-100">
         {estimate.items.map((item) => {
           const product = getProduct(item.productId)
-          const lineMargin = (item.unitPrice - item.unitCost) * item.quantity
+          const hrs = lineHours(estimate, item)
           return (
             <div key={item.id} className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-900">{item.location}</span>
-                    {item.kind === 'labor' && (
-                      <span className="rounded bg-sky-100 px-1.5 py-0.5 text-xs font-semibold text-sky-700">
-                        Labor · no tax
-                      </span>
-                    )}
-                    {item.priceOverridden && (
-                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-700">
-                        Custom price
-                      </span>
-                    )}
-                  </div>
+                  <div className="font-semibold text-slate-900">{item.location}</div>
                   <div className="text-sm text-slate-500">
-                    {item.kind === 'labor'
-                      ? 'Labor line'
-                      : `${product ? `${product.brand} ${product.series}` : item.productName || 'Custom'} · ${item.width}" × ${item.height}"`}
+                    {`${product ? `${product.brand} ${product.series}` : item.productName || 'Custom'} · ${item.width}" × ${item.height}"`}
                   </div>
                 </div>
                 <button
@@ -948,48 +1118,53 @@ function WindowSchedule({
                   />
                 </div>
                 <div>
-                  <label className="field-label">Unit cost</label>
-                  <input
-                    type="number"
-                    className="field"
-                    value={item.unitCost}
-                    onChange={(e) => setCost(item, Number(e.target.value))}
-                  />
-                </div>
-                <div>
-                  <label className="field-label">Sell price</label>
+                  <label className="field-label">Unit price</label>
                   <input
                     type="number"
                     className="field"
                     value={item.unitPrice}
-                    onChange={(e) =>
-                      onUpdateItem(item.id, { unitPrice: Number(e.target.value), priceOverridden: true })
-                    }
+                    onChange={(e) => setPrice(item, Number(e.target.value))}
                   />
                 </div>
-                <div className="flex flex-col justify-end text-right">
-                  <span className="text-sm text-slate-400">Line total</span>
-                  <span className="text-lg font-bold tabular-nums text-slate-900">
-                    {currency(item.unitPrice * item.quantity)}
-                  </span>
+                <div>
+                  <label className="field-label">Install type</label>
+                  <select
+                    className="field"
+                    value={item.installType ?? 'Replacement'}
+                    onChange={(e) =>
+                      onUpdateItem(item.id, {
+                        installType: e.target.value as WindowConstruction,
+                        hrsPerWin: defaultHoursForType(estimate, e.target.value as WindowConstruction),
+                      })
+                    }
+                  >
+                    <option value="Replacement">Replacement</option>
+                    <option value="New Construction">New Construction</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="field-label">Hrs / win</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.25}
+                    className="field"
+                    value={hrs}
+                    onChange={(e) => onUpdateItem(item.id, { hrsPerWin: Math.max(0, Number(e.target.value)) })}
+                  />
                 </div>
               </div>
 
               <div className="mt-2 flex items-center justify-between text-sm text-slate-500">
-                <span>Line margin: <span className="font-semibold text-emerald-300">{currency(lineMargin)}</span></span>
-                {item.priceOverridden && (
-                  <button
-                    className="font-medium text-brand-700 hover:text-brand-800"
-                    onClick={() =>
-                      onUpdateItem(item.id, {
-                        priceOverridden: false,
-                        unitPrice: deriveSellPrice(item.unitCost, estimate.marginMode, estimate.marginPct),
-                      })
-                    }
-                  >
-                    Reset to margin
-                  </button>
-                )}
+                <span>
+                  Install: <span className="font-semibold text-slate-700">{hrs * item.quantity}h</span>
+                </span>
+                <span>
+                  Line total:{' '}
+                  <span className="font-semibold tabular-nums text-slate-900">
+                    {currency(item.unitPrice * item.quantity)}
+                  </span>
+                </span>
               </div>
             </div>
           )
@@ -999,34 +1174,216 @@ function WindowSchedule({
   )
 }
 
+function CustomLaborList({
+  estimate,
+  onUpdate,
+  onRemove,
+}: {
+  estimate: Estimate
+  onUpdate: (laborId: string, patch: Partial<CustomLaborItem>) => void
+  onRemove: (laborId: string) => void
+}) {
+  const items = estimate.customLabor ?? []
+  if (items.length === 0) return null
+
+  return (
+    <div className="nsr-card overflow-hidden">
+      <div className="flex items-center justify-between border-b border-slate-100 p-5">
+        <h2 className="text-lg font-bold text-slate-900">Custom Labor</h2>
+        <span className="text-sm text-slate-500">{currency(estimateCustomLabor(estimate))} · untaxed</span>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {items.map((l) => (
+          <div key={l.id} className="p-5">
+            <div className="flex items-start justify-between gap-3">
+              <input
+                className="field font-semibold"
+                value={l.description}
+                onChange={(e) => onUpdate(l.id, { description: e.target.value })}
+              />
+              <button
+                className="shrink-0 text-sm font-medium text-slate-400 hover:text-rose-600"
+                onClick={() => onRemove(l.id)}
+              >
+                Remove
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <div className="flex gap-2">
+                {(['flat', 'hours'] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => onUpdate(l.id, { mode: m })}
+                    className={`rounded-md px-2.5 py-1.5 text-xs font-semibold ${
+                      l.mode === m ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {m === 'flat' ? 'Flat' : 'Hrs × rate'}
+                  </button>
+                ))}
+              </div>
+              {l.mode === 'flat' ? (
+                <div>
+                  <label className="field-label">Amount</label>
+                  <input
+                    type="number"
+                    min={0}
+                    className="field w-32"
+                    value={l.amount}
+                    onChange={(e) => onUpdate(l.id, { amount: Math.max(0, Number(e.target.value)) })}
+                  />
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="field-label">Hours</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.25}
+                      className="field w-24"
+                      value={l.hours}
+                      onChange={(e) => onUpdate(l.id, { hours: Math.max(0, Number(e.target.value)) })}
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label">Rate</label>
+                    <input
+                      type="number"
+                      min={0}
+                      className="field w-24"
+                      value={l.rate}
+                      onChange={(e) => onUpdate(l.id, { rate: Math.max(0, Number(e.target.value)) })}
+                    />
+                  </div>
+                </>
+              )}
+              <div className="ml-auto text-right">
+                <div className="text-sm text-slate-400">Total</div>
+                <div className="text-lg font-bold tabular-nums text-slate-900">
+                  {currency(customLaborAmount(l))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function EstimateSummary({
   estimate,
   onTaxChange,
   onMarginChange,
+  onLaborChange,
 }: {
   estimate: Estimate
   onTaxChange: (rate: number) => void
   onMarginChange: (patch: { marginMode?: MarginMode; marginPct?: number }) => void
+  onLaborChange: (patch: Partial<LaborSettings>) => void
 }) {
-  const materialCost = estimateMaterialCost(estimate)
-  const materialPrice = estimateMaterialPrice(estimate)
-  const margin = estimateProfit(estimate)
-  const labor = estimateLabor(estimate)
-  const subtotal = estimateSubtotal(estimate)
+  const s = laborSettings(estimate)
+  const rate = laborRate(estimate)
+  const materials = estimateMaterialPrice(estimate)
+  const calcHrs = estimateCalcHours(estimate)
+  const effHrs = estimateEffectiveHours(estimate)
+  const winLabor = estimateWindowLabor(estimate)
+  const customLabor = estimateCustomLabor(estimate)
+  const labor = estimateLaborTotal(estimate)
   const tax = estimateTax(estimate)
+  const subtotal = estimatePreProfit(estimate)
+  const profit = estimateProfit(estimate)
   const total = estimateTotal(estimate)
   const taxPercent = Number((estimate.taxRate * 100).toFixed(3))
+  const isMargin = estimate.marginMode === 'margin'
 
   return (
     <div className="nsr-card sticky top-20 p-6">
       <h2 className="text-lg font-bold text-slate-900">Estimate Summary</h2>
+
+      {/* Labor settings */}
+      <div className="mt-4 rounded-lg border border-slate-200 p-3.5">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold text-slate-700">Labor settings</span>
+          <span className="text-sm font-bold tabular-nums text-brand-700">{currency(rate)}/hr</span>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+          <label className="block">
+            <span className="field-label">Crew size</span>
+            <input
+              type="number"
+              min={1}
+              className="field"
+              value={s.crewSize}
+              onChange={(e) => onLaborChange({ crewSize: Math.max(1, Number(e.target.value)) })}
+            />
+          </label>
+          <label className="block">
+            <span className="field-label">$/carpenter·hr</span>
+            <input
+              type="number"
+              min={0}
+              className="field"
+              value={s.hourlyRate}
+              onChange={(e) => onLaborChange({ hourlyRate: Math.max(0, Number(e.target.value)) })}
+            />
+          </label>
+          <label className="block">
+            <span className="field-label">New const. hrs</span>
+            <input
+              type="number"
+              min={0}
+              step={0.25}
+              className="field"
+              value={s.newConstructionHrs}
+              onChange={(e) => onLaborChange({ newConstructionHrs: Math.max(0, Number(e.target.value)) })}
+            />
+          </label>
+          <label className="block">
+            <span className="field-label">Replacement hrs</span>
+            <input
+              type="number"
+              min={0}
+              step={0.25}
+              className="field"
+              value={s.replacementHrs}
+              onChange={(e) => onLaborChange({ replacementHrs: Math.max(0, Number(e.target.value)) })}
+            />
+          </label>
+          <label className="col-span-2 block">
+            <span className="field-label">Override total hrs (optional)</span>
+            <input
+              type="number"
+              min={0}
+              step={0.25}
+              placeholder={`Calc: ${calcHrs}h`}
+              className="field"
+              value={s.overrideHours ?? ''}
+              onChange={(e) =>
+                onLaborChange({ overrideHours: e.target.value === '' ? null : Math.max(0, Number(e.target.value)) })
+              }
+            />
+          </label>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+          <div className="rounded bg-slate-50 px-2.5 py-1.5">
+            <span className="text-slate-500">Calc hrs</span>
+            <span className="float-right font-semibold tabular-nums text-slate-700">{calcHrs}</span>
+          </div>
+          <div className="rounded bg-slate-50 px-2.5 py-1.5">
+            <span className="text-slate-500">Effective hrs</span>
+            <span className="float-right font-semibold tabular-nums text-slate-900">{effHrs}</span>
+          </div>
+        </div>
+      </div>
 
       {/* Margin controls */}
       <div className="mt-4 rounded-lg border border-slate-200 p-3.5">
         <div className="flex items-center gap-2">
           <button
             className={`flex-1 rounded-md px-2 py-1.5 text-sm font-semibold ${
-              estimate.marginMode === 'margin' ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-600'
+              isMargin ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-600'
             }`}
             onClick={() => onMarginChange({ marginMode: 'margin' })}
           >
@@ -1034,7 +1391,7 @@ function EstimateSummary({
           </button>
           <button
             className={`flex-1 rounded-md px-2 py-1.5 text-sm font-semibold ${
-              estimate.marginMode === 'markup' ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-600'
+              !isMargin ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-600'
             }`}
             onClick={() => onMarginChange({ marginMode: 'markup' })}
           >
@@ -1042,7 +1399,7 @@ function EstimateSummary({
           </button>
         </div>
         <div className="mt-3 flex items-center justify-between">
-          <span className="text-sm text-slate-500">{estimate.marginMode === 'margin' ? 'Margin' : 'Markup'} %</span>
+          <span className="text-sm text-slate-500">{isMargin ? 'Margin' : 'Markup'} %</span>
           <div className="relative">
             <input
               type="number"
@@ -1057,14 +1414,15 @@ function EstimateSummary({
         </div>
       </div>
 
-      {/* Build-up */}
+      {/* Global-margin build-up */}
       <dl className="mt-5 space-y-3 text-base">
-        <Row label="Material cost" value={currency(materialCost)} muted />
-        <Row label={`Margin (${estimate.marginPct}%)`} value={currency(margin)} className="text-emerald-300" />
-        <Row label="Material price (sell)" value={currency(materialPrice)} />
-        <Row label="Labor (untaxed)" value={currency(labor)} />
-        <div className="border-t border-slate-100 pt-3">
-          <Row label="Subtotal" value={currency(subtotal)} />
+        <Row label="Materials" value={currency(materials)} />
+        <div>
+          <Row label="Labor (untaxed)" value={currency(labor)} />
+          <div className="mt-0.5 text-xs text-slate-400">
+            {effHrs} effective hrs × {currency(rate)}/hr = {currency(winLabor)}
+            {customLabor > 0 && ` + ${currency(customLabor)} custom`}
+          </div>
         </div>
         <div className="flex items-center justify-between gap-3">
           <dt className="flex items-center gap-2 text-slate-500">
@@ -1083,6 +1441,14 @@ function EstimateSummary({
           </dt>
           <dd className="font-semibold tabular-nums text-slate-900">{currency(tax)}</dd>
         </div>
+        <div className="border-t border-slate-100 pt-3">
+          <Row label="Subtotal" value={currency(subtotal)} />
+        </div>
+        <Row
+          label={`${isMargin ? 'Margin' : 'Markup'} (${estimate.marginPct}%)`}
+          value={currency(profit)}
+          className="text-emerald-300"
+        />
       </dl>
 
       <div className="mt-4 border-t border-slate-200 pt-4">
@@ -1092,11 +1458,11 @@ function EstimateSummary({
         </div>
         <div className="mt-3 flex items-center justify-between rounded-lg bg-brand-500/10 px-3.5 py-2.5">
           <span className="text-sm font-medium text-brand-500">Est. profit</span>
-          <span className="text-lg font-bold tabular-nums text-brand-500">{currency(margin)}</span>
+          <span className="text-lg font-bold tabular-nums text-brand-500">{currency(profit)}</span>
         </div>
         <p className="mt-2 text-xs text-slate-400">
-          Add labor with the Labor toggle in “Build a line.” Labor is included in the subtotal but
-          not taxed.
+          One global {isMargin ? 'margin' : 'markup'} is applied to materials + labor + tax. Labor is
+          included in the subtotal but never taxed.
         </p>
       </div>
     </div>

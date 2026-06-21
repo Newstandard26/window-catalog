@@ -10,15 +10,17 @@ import {
 } from 'react'
 import type {
   Client,
+  CustomLaborItem,
   Estimate,
   EstimateStatus,
+  LaborSettings,
   MarginMode,
   SignatureRecord,
   SignedFile,
   WindowItem,
 } from '../types'
 import { SEED_CLIENTS, SEED_ESTIMATES } from './seed'
-import { deriveSellPrice, estimateSubtotal, estimateTotal } from '../lib/format'
+import { DEFAULT_LABOR, estimateSubtotal, estimateTotal } from '../lib/format'
 import { getClientStats } from '../lib/stats'
 import { fetchSignedDocuments, getSigningStatus, isDocusignConfigured } from '../lib/sign'
 import { cloudDelete, cloudEnabled, cloudLoad, cloudUpsert } from './cloud'
@@ -40,22 +42,53 @@ export function isJunkEstimate(e: Estimate): boolean {
 }
 
 /**
- * Task 1: backfill the cost/margin/labor fields on estimates saved before the
- * margin engine existed. Legacy line items get unitCost = unitPrice (0 margin)
- * and priceOverridden = true, so a later global margin change won't clobber the
- * price the user originally entered.
+ * Backfill the labor + global-margin fields on estimates saved before this
+ * model existed. Window lines gain an install type + HRS/WIN (so the labor
+ * calc has inputs); any legacy per-line "labor" item is converted into a flat
+ * custom-labor line; and the estimate gets default labor settings.
  */
 function migrateEstimate(e: Estimate): Estimate {
+  const items: WindowItem[] = []
+  const customLabor: CustomLaborItem[] = [...(e.customLabor ?? [])]
+  for (const raw of e.items ?? []) {
+    const it: WindowItem = {
+      ...raw,
+      kind: raw.kind ?? 'material',
+      unitCost: raw.unitCost ?? raw.unitPrice,
+      unitPrice: raw.unitPrice ?? raw.unitCost ?? 0,
+      priceOverridden: raw.priceOverridden ?? true,
+    }
+    if (it.kind === 'labor') {
+      // Legacy per-line labor → a flat custom-labor line.
+      customLabor.push({
+        id: it.id,
+        description: it.location || 'Labor',
+        mode: 'flat',
+        amount: (it.unitPrice ?? 0) * (it.quantity ?? 1),
+        hours: 0,
+        rate: DEFAULT_LABOR.crewSize * DEFAULT_LABOR.hourlyRate,
+      })
+      continue
+    }
+    const installType = it.installType ?? 'Replacement'
+    items.push({
+      ...it,
+      installType,
+      hrsPerWin:
+        it.hrsPerWin ??
+        (installType === 'New Construction'
+          ? DEFAULT_LABOR.newConstructionHrs
+          : DEFAULT_LABOR.replacementHrs),
+    })
+  }
   return {
     ...e,
     marginMode: e.marginMode ?? 'margin',
     marginPct: e.marginPct ?? 35,
-    items: (e.items ?? []).map((it) => ({
-      ...it,
-      kind: it.kind ?? 'material',
-      unitCost: it.unitCost ?? it.unitPrice,
-      priceOverridden: it.priceOverridden ?? true,
-    })),
+    taxRate: e.taxRate ?? 0.0825,
+    labor: { ...DEFAULT_LABOR, ...(e.labor ?? {}) },
+    customLabor,
+    items,
   }
 }
 
@@ -103,8 +136,13 @@ interface StoreValue {
    * Returns the live status. Safe to call repeatedly (no-op once signed).
    */
   finalizeDocusign: (estimateId: string) => Promise<string>
-  /** Update margin mode/pct and recompute every non-overridden line's sell price. */
+  /** Update the single global margin mode/pct for the whole job. */
   setEstimateMargin: (id: string, patch: { marginMode?: MarginMode; marginPct?: number }) => void
+  /** Patch the estimate's labor settings (crew rate, default hours, override). */
+  setLaborSettings: (id: string, patch: Partial<LaborSettings>) => void
+  addCustomLabor: (estimateId: string, item: Omit<CustomLaborItem, 'id'>) => void
+  updateCustomLabor: (estimateId: string, laborId: string, patch: Partial<CustomLaborItem>) => void
+  removeCustomLabor: (estimateId: string, laborId: string) => void
   addWindowItem: (estimateId: string, item: Omit<WindowItem, 'id'>) => void
   updateWindowItem: (estimateId: string, itemId: string, patch: Partial<WindowItem>) => void
   removeWindowItem: (estimateId: string, itemId: string) => void
@@ -240,19 +278,71 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setEstimateMargin: StoreValue['setEstimateMargin'] = useCallback((id, patch) => {
+    // Global margin: just store mode/pct — it's applied to the whole subtotal at
+    // calc time, so there's nothing per-line to recompute.
     setEstimates((prev) =>
-      prev.map((e) => {
-        if (e.id !== id) return e
-        const marginMode: MarginMode = patch.marginMode ?? e.marginMode
-        const marginPct = patch.marginPct ?? e.marginPct
-        // Recompute sell prices for every line that hasn't been hand-overridden.
-        const items = e.items.map((it) =>
-          it.priceOverridden
-            ? it
-            : { ...it, unitPrice: deriveSellPrice(it.unitCost ?? 0, marginMode, marginPct) },
-        )
-        return { ...e, marginMode, marginPct, items, updatedAt: new Date().toISOString() }
-      }),
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              marginMode: patch.marginMode ?? e.marginMode,
+              marginPct: patch.marginPct ?? e.marginPct,
+              updatedAt: new Date().toISOString(),
+            }
+          : e,
+      ),
+    )
+  }, [])
+
+  const setLaborSettings: StoreValue['setLaborSettings'] = useCallback((id, patch) => {
+    setEstimates((prev) =>
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              labor: { ...DEFAULT_LABOR, ...(e.labor ?? {}), ...patch },
+              updatedAt: new Date().toISOString(),
+            }
+          : e,
+      ),
+    )
+  }, [])
+
+  const addCustomLabor: StoreValue['addCustomLabor'] = useCallback((estimateId, item) => {
+    const withId: CustomLaborItem = { ...item, id: uid('lab') }
+    setEstimates((prev) =>
+      prev.map((e) =>
+        touch(estimateId, e.id === estimateId ? { ...e, customLabor: [...(e.customLabor ?? []), withId] } : e),
+      ),
+    )
+  }, [])
+
+  const updateCustomLabor: StoreValue['updateCustomLabor'] = useCallback((estimateId, laborId, patch) => {
+    setEstimates((prev) =>
+      prev.map((e) =>
+        touch(
+          estimateId,
+          e.id === estimateId
+            ? {
+                ...e,
+                customLabor: (e.customLabor ?? []).map((l) => (l.id === laborId ? { ...l, ...patch } : l)),
+              }
+            : e,
+        ),
+      ),
+    )
+  }, [])
+
+  const removeCustomLabor: StoreValue['removeCustomLabor'] = useCallback((estimateId, laborId) => {
+    setEstimates((prev) =>
+      prev.map((e) =>
+        touch(
+          estimateId,
+          e.id === estimateId
+            ? { ...e, customLabor: (e.customLabor ?? []).filter((l) => l.id !== laborId) }
+            : e,
+        ),
+      ),
     )
   }, [])
 
@@ -373,6 +463,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     recordSignature,
     finalizeDocusign,
     setEstimateMargin,
+    setLaborSettings,
+    addCustomLabor,
+    updateCustomLabor,
+    removeCustomLabor,
     addWindowItem,
     updateWindowItem,
     removeWindowItem,
