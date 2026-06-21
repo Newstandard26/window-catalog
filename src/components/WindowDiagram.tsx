@@ -104,6 +104,8 @@ interface DiagramProps {
   grille?: string | null
   handing?: 'L' | 'R' | null
   sections?: WindowSection[]
+  /** vertical = sections side-by-side (columns); horizontal = stacked (rows). */
+  mullType?: 'vertical' | 'horizontal'
   /** Max px for the longest frame edge. */
   maxFrame?: number
 }
@@ -159,6 +161,18 @@ function lite(x: number, y: number, w: number, h: number, s: WindowSection, key:
         els.push(<line key={`${key}-mr`} x1={x} y1={y + h * 0.62} x2={x + w} y2={y + h * 0.62} stroke="currentColor" strokeWidth={STROKE} />)
         els.push(<circle key={`${key}-hdl`} cx={x + w - inset - 2} cy={cy} r={0.9} fill="currentColor" />)
         break
+      case 'half-circle':
+        // Arched transom: half-ellipse rising from the section's bottom corners.
+        els.push(
+          <path
+            key={`${key}-hc`}
+            d={`M ${x} ${y + h} A ${w / 2} ${h} 0 0 1 ${x + w} ${y + h}`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={GRILLE_STROKE}
+          />,
+        )
+        break
       case 'picture':
       default:
         break
@@ -187,6 +201,7 @@ export function WindowDiagram({
   grille,
   handing,
   sections,
+  mullType,
   maxFrame = 78,
 }: DiagramProps) {
   const aw = widthIn && widthIn > 0 ? widthIn : 1
@@ -250,8 +265,30 @@ export function WindowDiagram({
         body.push(<line key={`hr${i}`} x1={fx + r} y1={fy + fh} x2={fx + r - r * Math.cos(a)} y2={fy + fh - r * Math.sin(a)} stroke="currentColor" strokeWidth={GRILLE_STROKE} opacity={0.7} />)
       }
     }
+  } else if (mullType === 'horizontal' && secs.length > 1) {
+    // Stacked sections (horizontal mullion / transom). Quote lists sub-units
+    // bottom-to-top, so draw the reversed order from the top down.
+    body.push(<rect key="frame" x={fx} y={fy} width={fw} height={fh} fill="none" stroke="currentColor" strokeWidth={STROKE * 1.4} />)
+    const ordered = [...secs].reverse()
+    const totalH = ordered.reduce((s, x) => s + (x.height ?? 1), 0)
+    let cursorY = fy
+    ordered.forEach((sec, idx) => {
+      const sh = (fh * (sec.height ?? 1)) / totalH
+      if (idx > 0) {
+        body.push(<line key={`mull${idx}`} x1={fx} y1={cursorY} x2={fx + fw} y2={cursorY} stroke="currentColor" strokeWidth={STROKE * 1.6} />)
+      }
+      body.push(...lite(fx, cursorY, fw, sh, sec, `s${idx}`))
+      if (sec.label) {
+        body.push(
+          <text key={`lbl${idx}`} x={fx + fw / 2} y={cursorY + sh / 2} textAnchor="middle" dominantBaseline="middle" fontSize={5.5} fill="currentColor" opacity={0.65}>
+            {sec.label}
+          </text>,
+        )
+      }
+      cursorY += sh
+    })
   } else {
-    // Rectangular frame, possibly split into mulled sections.
+    // Rectangular frame, possibly split into side-by-side mulled sections.
     body.push(<rect key="frame" x={fx} y={fy} width={fw} height={fh} fill="none" stroke="currentColor" strokeWidth={STROKE * 1.4} />)
     let cursor = fx
     secs.forEach((sec, idx) => {

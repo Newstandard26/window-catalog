@@ -325,6 +325,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             type: existing.type ?? inp.type,
             glass: existing.glass ?? inp.glass,
             grille: existing.grille ?? inp.grille,
+            sections: inp.sections ?? existing.sections,
+            mullType: inp.mullType ?? existing.mullType,
             interiorColor: existing.interiorColor ?? inp.interiorColor,
             uFactor: existing.uFactor ?? inp.uFactor,
             shgc: existing.shgc ?? inp.shgc,

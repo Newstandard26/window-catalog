@@ -37,6 +37,10 @@ export interface CatalogItem {
   interiorColor: string | null
   glass: string | null
   grille: string | null
+  /** Section breakdown for mulled/combo units (each sub-unit, in order). */
+  sections?: CatalogSection[] | null
+  /** How the sections are joined (vertical mullion / horizontal transom). */
+  mullType?: MullType | null
   /** Latest vendor per-unit cost. */
   unitCost: number
   /** Always "vendor cost" — these are NSR's costs, not sell prices. */
@@ -108,9 +112,22 @@ export interface WindowSection {
   style: WindowStyle
   grille?: string | null
   handing?: 'L' | 'R' | null
-  /** Relative width weight across the mulled unit (defaults to equal). */
+  /** Relative width weight across a side-by-side mulled unit (defaults to equal). */
   width?: number
+  /** Relative height weight across a stacked (horizontal-mull) unit. */
+  height?: number
   label?: string
+}
+
+/** How a mulled/combo unit's sections are joined. */
+export type MullType = 'vertical' | 'horizontal'
+
+/** A catalog item's serialized section (kept as plain strings for storage). */
+export interface CatalogSection {
+  operation: string
+  widthIn: number | null
+  heightIn: number | null
+  handing: 'L' | 'R' | null
 }
 
 /** Captured when a client e-signs a proposal. */
@@ -169,6 +186,8 @@ export interface WindowItem {
   handing?: 'L' | 'R' | null
   /** Section breakdown for mulled/multi-wide units. */
   sections?: WindowSection[]
+  /** How sections are joined (vertical mullion / horizontal transom). */
+  mullType?: MullType
 }
 
 export interface Estimate {

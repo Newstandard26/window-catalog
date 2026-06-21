@@ -62,6 +62,16 @@ export function lineToCatalogInput(line: ParsedLine, meta: ParseResult): Catalog
     interiorColor: line.interiorColor ?? null,
     glass: line.glass ?? null,
     grille: line.grille ?? null,
+    sections:
+      line.sections && line.sections.length > 0
+        ? line.sections.map((s) => ({
+            operation: (s.operation ?? s.style ?? '').trim(),
+            widthIn: s.widthIn ?? null,
+            heightIn: s.heightIn ?? null,
+            handing: s.handing ?? null,
+          }))
+        : null,
+    mullType: line.mullType ?? null,
     unitCost: Number(line.unitCost) || 0,
     priceBasis: CATALOG_PRICE_BASIS,
     source,

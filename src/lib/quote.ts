@@ -35,9 +35,22 @@ export interface ParsedLine {
   unitCost?: number
   category?: 'window' | 'door' | 'accessory'
   location?: string | null
-  sections?: { style: string; label?: string }[] | null
+  /** Per-section breakdown for mulled/combo units (each sub-unit, in order). */
+  sections?: ParsedSection[] | null
+  /** How the sections are joined: vertical mullion (side-by-side) or horizontal (stacked). */
+  mullType?: 'vertical' | 'horizontal' | null
   source?: string | null
   confidence?: number
+}
+
+export interface ParsedSection {
+  /** Sub-unit operation, e.g. "Casement", "Half-Circle", "Picture". */
+  operation?: string | null
+  /** Legacy alias the model may emit instead of `operation`. */
+  style?: string | null
+  widthIn?: number | null
+  heightIn?: number | null
+  handing?: 'L' | 'R' | null
 }
 
 export interface ParseResult {
@@ -101,7 +114,13 @@ export function parsedLineToItem(line: ParsedLine): Omit<WindowItem, 'id'> {
   const unitCost = Number(line.unitCost) || 0
   const sections: WindowSection[] | undefined =
     line.sections && line.sections.length > 0
-      ? line.sections.map((s) => ({ style: normStyle(s.style), label: s.label }))
+      ? line.sections.map((s) => ({
+          style: normStyle(s.operation ?? s.style),
+          handing: s.handing ?? null,
+          width: s.widthIn ?? undefined,
+          height: s.heightIn ?? undefined,
+          label: s.handing ?? undefined,
+        }))
       : undefined
   const name = [line.brand, line.series, line.style].filter(Boolean).join(' ').trim()
   const installType: WindowConstruction = line.type === 'New Construction' ? 'New Construction' : 'Replacement'
@@ -124,5 +143,6 @@ export function parsedLineToItem(line: ParsedLine): Omit<WindowItem, 'id'> {
     grille: line.grille ?? null,
     handing: line.handing ?? null,
     sections,
+    mullType: line.mullType ?? undefined,
   }
 }

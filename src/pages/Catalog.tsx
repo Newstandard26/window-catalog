@@ -161,6 +161,24 @@ function CatalogCard({ item }: { item: CatalogItem }) {
         ))}
       </dl>
 
+      {item.sections && item.sections.length > 1 && (
+        <div className="mt-4 border-t border-slate-100 pt-3 text-sm">
+          <div className="text-slate-400">
+            Configuration
+            {item.mullType ? ` · ${item.mullType} mull` : ''}
+          </div>
+          <ul className="mt-1 space-y-0.5">
+            {item.sections.map((s, idx) => (
+              <li key={idx} className="text-slate-700">
+                <span className="font-semibold">{s.operation || 'Section'}</span>
+                {s.handing ? ` (${s.handing})` : ''}
+                {s.widthIn && s.heightIn ? ` · ${s.widthIn}" × ${s.heightIn}"` : ''}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="mt-4 text-xs text-slate-400">{item.source}</div>
 
       <div className="mt-3 flex items-baseline justify-between">

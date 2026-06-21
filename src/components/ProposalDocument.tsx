@@ -88,6 +88,7 @@ export function ProposalDocument({
                       grille={grille}
                       handing={item.handing}
                       sections={item.sections}
+                      mullType={item.mullType}
                       maxFrame={54}
                     />
                   </td>

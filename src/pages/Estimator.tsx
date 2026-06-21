@@ -95,7 +95,7 @@ function makeWindowItem(
     | 'installType'
     | 'hrsPerWin'
   > &
-    Partial<Pick<WindowItem, 'productName' | 'style' | 'grille' | 'sizeBasis'>>,
+    Partial<Pick<WindowItem, 'productName' | 'style' | 'grille' | 'sizeBasis' | 'sections' | 'mullType'>>,
 ): Omit<WindowItem, 'id'> {
   return {
     kind: 'material',
@@ -528,16 +528,27 @@ function WindowForm({
     style: undefined as WindowItem['style'],
     grille: undefined as string | null | undefined,
     sizeBasis: undefined as string | null | undefined,
+    sections: undefined as WindowItem['sections'],
+    mullType: undefined as WindowItem['mullType'],
     quantity: 1,
     unitPrice: 0,
     installType: 'Replacement' as WindowConstruction,
     hrsPerWin: defaultHoursForType(estimate, 'Replacement'),
   }))
 
-  // Selecting a catalog item auto-fills cost + size + diagram spec.
+  // Selecting a catalog item auto-fills cost + size + diagram spec (incl. sections).
   const onProduct = (productId: string) => {
     if (productId === 'custom') {
-      setForm((f) => ({ ...f, productId, productName: '', style: undefined, grille: undefined, sizeBasis: undefined }))
+      setForm((f) => ({
+        ...f,
+        productId,
+        productName: '',
+        style: undefined,
+        grille: undefined,
+        sizeBasis: undefined,
+        sections: undefined,
+        mullType: undefined,
+      }))
       return
     }
     const p = catalogItems.find((c) => c.id === productId)
@@ -552,6 +563,17 @@ function WindowForm({
       style: inferWindowStyle(p.style),
       grille: p.grille,
       sizeBasis: p.sizeBasis,
+      sections:
+        p.sections && p.sections.length > 0
+          ? p.sections.map((s) => ({
+              style: inferWindowStyle(s.operation),
+              handing: s.handing ?? undefined,
+              width: s.widthIn ?? undefined,
+              height: s.heightIn ?? undefined,
+              label: s.handing ?? undefined,
+            }))
+          : undefined,
+      mullType: p.mullType ?? undefined,
     }))
   }
 
@@ -570,6 +592,8 @@ function WindowForm({
         style: form.style,
         grille: form.grille,
         sizeBasis: form.sizeBasis,
+        sections: form.sections,
+        mullType: form.mullType,
         quantity: Math.max(1, form.quantity),
         unitPrice: form.unitPrice,
         installType: form.installType,
