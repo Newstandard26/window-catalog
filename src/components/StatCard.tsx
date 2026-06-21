@@ -13,7 +13,7 @@ export function StatCard({
 }) {
   return (
     <div className="nsr-card p-5 sm:p-6">
-      <div className="text-sm font-medium text-slate-500">{label}</div>
+      <div className="whitespace-normal text-sm font-medium text-slate-500 sm:whitespace-nowrap">{label}</div>
       <div
         className={`mt-2 text-3xl font-bold tracking-tight ${
           accent ? 'text-brand-700' : 'text-slate-900'

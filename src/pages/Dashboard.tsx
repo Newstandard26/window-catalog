@@ -73,7 +73,7 @@ export function Dashboard() {
 
       <Container className="py-8">
         {/* Deduped stat row — each metric once, from the shared selectors. */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
           <StatCard label="Pipeline Value" value={currency(metrics.pipelineValue)} accent />
           <StatCard label="Won This Month" value={currency(metrics.wonThisMonth)} />
           <StatCard label="Total Won Revenue" value={currency(metrics.wonRevenue)} accent />

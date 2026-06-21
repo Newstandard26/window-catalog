@@ -26,7 +26,9 @@ export default {
         },
       },
       maxWidth: {
-        content: '1200px',
+        // Full-width layout with comfortable gutters, capped so text lines stay
+        // readable on ultra-wide monitors (~1536px = Tailwind's 2xl).
+        content: '1536px',
       },
       boxShadow: {
         card: '0 1px 3px 0 rgb(15 23 42 / 0.08), 0 1px 2px -1px rgb(15 23 42 / 0.06)',
