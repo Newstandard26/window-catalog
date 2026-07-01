@@ -5,10 +5,20 @@ import { PageHeader } from '../components/PageHeader'
 import { StatusBadge } from '../components/StatusBadge'
 import { useStore } from '../data/store'
 import { currency, estimateTotal, shortDate, totalWindowCount } from '../lib/format'
+import { activeEstimates } from '../lib/stats'
 import { PIPELINE, type EstimateStatus } from '../types'
 
 export function Projects() {
-  const { estimates, getClient, setEstimateStatus } = useStore()
+  const { estimates, clients, getClient, setEstimateStatus, removeEstimate } = useStore()
+
+  const onDelete = (id: string, name: string) => {
+    if (window.confirm(`Delete "${name}"? This can't be undone.`)) {
+      removeEstimate(id)
+    }
+  }
+
+  // Estimates of archived (lost) clients drop out of the active pipeline.
+  const visible = useMemo(() => activeEstimates(estimates, clients), [estimates, clients])
 
   // Phase 5: the pipeline counts/totals come straight from each estimate's status.
   const byStage = useMemo(() => {
@@ -19,16 +29,16 @@ export function Projects() {
       Won: 0,
       Lost: 0,
     }
-    for (const e of estimates) map[e.status] += estimateTotal(e)
+    for (const e of visible) map[e.status] += estimateTotal(e)
     return map
-  }, [estimates])
+  }, [visible])
 
   const ordered = useMemo(
     () =>
-      [...estimates].sort(
+      [...visible].sort(
         (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
       ),
-    [estimates],
+    [visible],
   )
 
   return (
@@ -42,7 +52,7 @@ export function Projects() {
         {/* Pipeline summary */}
         <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           {PIPELINE.map((stage) => {
-            const count = estimates.filter((e) => e.status === stage).length
+            const count = visible.filter((e) => e.status === stage).length
             return (
               <div key={stage} className="nsr-card p-5">
                 <StatusBadge status={stage} />
@@ -73,7 +83,7 @@ export function Projects() {
                     </Link>
                     <div className="mt-1 text-sm text-slate-500">
                       {client ? (
-                        <Link to={`/crm/${client.id}`} className="hover:text-brand-700">
+                        <Link to={`/clients/${client.id}`} className="hover:text-brand-700">
                           {client.name}
                         </Link>
                       ) : (
@@ -88,8 +98,8 @@ export function Projects() {
                   <div className="text-lg font-bold text-slate-900 md:col-span-2">
                     {currency(estimateTotal(e))}
                   </div>
-                  <div className="md:col-span-3 md:flex md:justify-end">
-                    {/* Set the real status — drives Projects + CRM Won Revenue */}
+                  <div className="flex items-center gap-2 md:col-span-3 md:justify-end">
+                    {/* Set the real status — drives Projects + Dashboard Won Revenue */}
                     <select
                       className="field max-w-[10rem]"
                       value={e.status}
@@ -103,6 +113,26 @@ export function Projects() {
                         </option>
                       ))}
                     </select>
+                    <Link
+                      to={`/proposal/${e.id}`}
+                      className="rounded-lg border border-slate-300 p-2.5 text-slate-400 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-600"
+                      title="Export proposal PDF"
+                      aria-label={`Export ${e.name}`}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                      </svg>
+                    </Link>
+                    <button
+                      className="rounded-lg border border-slate-300 p-2.5 text-slate-400 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600"
+                      title="Delete estimate"
+                      aria-label={`Delete ${e.name}`}
+                      onClick={() => onDelete(e.id, e.name)}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m2 0v14a1 1 0 01-1 1H7a1 1 0 01-1-1V6h12zM10 11v6M14 11v6" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
               </div>

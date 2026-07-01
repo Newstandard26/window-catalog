@@ -7,17 +7,16 @@ const TABS = [
   { to: '/catalog', label: 'Catalog' },
   { to: '/estimator', label: 'Estimator' },
   { to: '/projects', label: 'Projects' },
-  { to: '/crm', label: 'CRM' },
 ]
 
 function Logo() {
   return (
     <div className="flex items-center gap-2.5">
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 font-bold text-white shadow-sm">
+      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500 font-bold text-black shadow-sm">
         NS
       </div>
       <span className="text-lg font-semibold tracking-tight text-white">
-        NSR <span className="font-normal text-slate-300">Window Catalog</span>
+        NSR <span className="font-normal text-slate-400">Window Catalog</span>
       </span>
     </div>
   )
@@ -30,8 +29,8 @@ export function TopNav() {
     [
       'rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors',
       isActive
-        ? 'bg-white/10 text-white ring-1 ring-inset ring-white/15'
-        : 'text-slate-300 hover:bg-white/5 hover:text-white',
+        ? 'bg-brand-500/15 text-brand-500 ring-1 ring-inset ring-brand-500/30'
+        : 'text-slate-400 hover:bg-white/5 hover:text-white',
     ].join(' ')
 
   return (
@@ -49,7 +48,7 @@ export function TopNav() {
         </nav>
 
         {/* Far right: company name */}
-        <div className="hidden text-right text-sm font-medium text-slate-300 lg:block">
+        <div className="hidden text-right text-sm font-medium text-slate-400 lg:block">
           New Standard Restoration LLC
         </div>
 

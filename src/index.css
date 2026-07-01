@@ -4,49 +4,141 @@
 
 @layer base {
   html {
-    /* Phase 2: bump the base font size so CRM / Estimator / Projects read larger */
+    /* Phase 2: bump the base font size so Dashboard / Estimator / Projects read larger */
     font-size: 16.5px;
   }
   body {
-    @apply bg-slate-100 text-slate-800 antialiased;
+    @apply bg-black text-slate-700 antialiased;
     font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
       Helvetica, Arial, sans-serif;
   }
 }
 
 @layer components {
-  /* One shared card style — white, subtle border, soft shadow (Catalog brand cards) */
+  /* Shared card style — dark surface lifted off black with a subtle border. */
   .nsr-card {
-    @apply rounded-xl border border-slate-200 bg-white shadow-card;
+    @apply rounded-xl border shadow-card;
+    background-color: #101012;
+    border-color: #262629;
   }
 
-  /* One primary button (solid NSR blue) and one secondary (outline) */
+  /* Primary = filled accent with black label; secondary = dark outline. */
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5
       text-base font-semibold transition-colors focus:outline-none
-      focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2
+      focus-visible:ring-2 focus-visible:ring-brand-400
       disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-brand-700 text-white hover:bg-brand-800;
+    @apply btn bg-brand-500 text-black hover:bg-brand-800;
   }
   .btn-secondary {
-    @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+    @apply btn border text-white;
+    background-color: #101012;
+    border-color: #2a2a2e;
+  }
+  .btn-secondary:hover {
+    background-color: #1a1a1f;
   }
   .btn-ghost {
-    @apply btn text-slate-600 hover:bg-slate-100;
+    @apply btn text-slate-500 hover:text-white;
+  }
+  .btn-ghost:hover {
+    background-color: #17171b;
   }
   .btn-sm {
     @apply px-3 py-1.5 text-sm;
   }
 
-  /* Consistent form fields with generous padding */
+  /* Dark form fields with an accent focus ring. */
   .field {
-    @apply w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5
-      text-base text-slate-900 placeholder:text-slate-400
-      focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200;
+    @apply w-full rounded-lg border px-3.5 py-2.5 text-base text-white
+      focus:outline-none focus:ring-2;
+    background-color: #101012;
+    border-color: #2a2a2e;
+  }
+  .field::placeholder {
+    color: #6b7177;
+  }
+  .field:focus {
+    border-color: #51c5f4;
+    --tw-ring-color: rgb(81 197 244 / 0.3);
   }
   .field-label {
-    @apply mb-1.5 block text-sm font-medium text-slate-600;
+    @apply mb-1.5 block text-sm font-medium text-slate-500;
+  }
+}
+
+/* Client-facing document pages (proposal / public signing / print) stay light —
+   a white "paper" look. Re-light the dark tokens within a .paper subtree. */
+@layer components {
+  .paper {
+    background: #f1f5f9;
+    color: #1e293b;
+  }
+  .paper .nsr-card,
+  .paper .bg-white {
+    background-color: #ffffff;
+  }
+  .paper .nsr-card {
+    border-color: #e2e8f0;
+  }
+  .paper .text-slate-900 { color: #0f172a; }
+  .paper .text-slate-800 { color: #1e293b; }
+  .paper .text-ink-800 { color: #1e293b; }
+  .paper .text-slate-700 { color: #334155; }
+  .paper .text-slate-600 { color: #475569; }
+  .paper .text-slate-500 { color: #64748b; }
+  .paper .text-slate-400 { color: #94a3b8; }
+  .paper .border-slate-300 { border-color: #cbd5e1; }
+  .paper .border-slate-200 { border-color: #e2e8f0; }
+  .paper .border-slate-100 { border-color: #f1f5f9; }
+  .paper .border-ink-800 { border-color: #1e293b; }
+  .paper .bg-slate-100 { background-color: #f1f5f9; }
+  .paper .bg-slate-50 { background-color: #f8fafc; }
+  .paper .bg-brand-600 { background-color: #2563eb; }
+  .paper .btn-primary { background-color: #1d4ed8; color: #ffffff; }
+  .paper .field {
+    background-color: #ffffff;
+    border-color: #cbd5e1;
+    color: #0f172a;
+  }
+  .paper .field-label { color: #475569; }
+}
+
+/* Task 2: print styles for the proposal / Save-as-PDF output. */
+/* Proposals print landscape (wider schedule + diagram column). */
+@page {
+  size: letter landscape;
+  margin: 0.5in;
+}
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  html,
+  body {
+    background: #ffffff !important;
+  }
+  /* Use the full landscape width — drop the on-screen page frame/padding. */
+  .paper {
+    background: #ffffff !important;
+    padding: 0 !important;
+  }
+  .paper article {
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+  /* Clean page breaks: never split a window row; repeat the column header;
+     keep the totals + footer blocks intact. */
+  .paper thead {
+    display: table-header-group;
+  }
+  .paper tr,
+  .paper .avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 }
