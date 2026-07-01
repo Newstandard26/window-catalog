@@ -121,6 +121,8 @@ export function parsedLineToItem(line: ParsedLine): Omit<WindowItem, 'id'> {
           handing: s.handing ?? null,
           width: s.widthIn ?? undefined,
           height: s.heightIn ?? undefined,
+          // Mirror the unit's grille onto each section so mulled units draw it.
+          grille: line.grille ?? undefined,
           label: s.handing ?? undefined,
         }))
       : undefined

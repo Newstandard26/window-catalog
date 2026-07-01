@@ -5,7 +5,7 @@ import { PageHeader } from '../components/PageHeader'
 import { StatusBadge } from '../components/StatusBadge'
 import { useStore } from '../data/store'
 import { catalogLabel, lineToCatalogInput } from '../data/catalog'
-import { inferWindowStyle } from '../components/WindowDiagram'
+import { WindowDiagram, inferWindowStyle } from '../components/WindowDiagram'
 import {
   autoEstimateName,
   currency,
@@ -591,6 +591,7 @@ function WindowForm({
               handing: s.handing ?? undefined,
               width: s.widthIn ?? undefined,
               height: s.heightIn ?? undefined,
+              grille: p.grille ?? undefined,
               label: s.handing ?? undefined,
             }))
           : undefined,
@@ -1209,30 +1210,58 @@ function WindowSchedule({
       <div className="divide-y divide-slate-100">
         {estimate.items.map((item) => {
           const hrs = lineHours(estimate, item)
+          // Same spec the exported proposal draws from, so the estimate mirrors
+          // the quote's grille + configuration.
+          const style =
+            item.style ??
+            inferWindowStyle([item.productName, item.location].filter(Boolean).join(' '))
           return (
             <div key={item.id} className="p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  {/* Header = the product descriptor; location is an editable subheader. */}
-                  <div className="font-semibold text-slate-900">
-                    {item.productName || 'Custom window'}
-                    <span className="ml-2 text-sm font-normal text-slate-400">
-                      {item.width}" × {item.height}"
-                    </span>
-                  </div>
-                  <input
-                    className="mt-1 w-full max-w-xs rounded border border-slate-300 bg-transparent px-2 py-1 text-sm text-slate-700 placeholder:text-slate-400"
-                    value={item.location}
-                    placeholder="Add a location (e.g. Kitchen)"
-                    onChange={(e) => onUpdateItem(item.id, { location: e.target.value })}
+              <div className="flex items-start gap-4">
+                <div className="shrink-0 text-slate-500">
+                  <WindowDiagram
+                    style={style}
+                    widthIn={item.width}
+                    heightIn={item.height}
+                    sizeBasis={item.sizeBasis}
+                    grille={item.grille}
+                    handing={item.handing}
+                    sections={item.sections}
+                    mullType={item.mullType}
+                    maxFrame={46}
                   />
                 </div>
-                <button
-                  className="shrink-0 text-sm font-medium text-slate-400 hover:text-rose-600"
-                  onClick={() => onRemove(item.id)}
-                >
-                  Remove
-                </button>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-3">
+                    {/* Header = the product descriptor; location + grille below. */}
+                    <div className="min-w-0 font-semibold text-slate-900">
+                      {item.productName || 'Custom window'}
+                      <span className="ml-2 text-sm font-normal text-slate-400">
+                        {item.width}" × {item.height}"
+                      </span>
+                    </div>
+                    <button
+                      className="shrink-0 text-sm font-medium text-slate-400 hover:text-rose-600"
+                      onClick={() => onRemove(item.id)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <input
+                      className="min-w-0 flex-1 rounded border border-slate-300 bg-transparent px-2 py-1 text-sm text-slate-700 placeholder:text-slate-400"
+                      value={item.location}
+                      placeholder="Add a location (e.g. Kitchen)"
+                      onChange={(e) => onUpdateItem(item.id, { location: e.target.value })}
+                    />
+                    <input
+                      className="w-32 rounded border border-slate-300 bg-transparent px-2 py-1 text-sm text-slate-700 placeholder:text-slate-400"
+                      value={item.grille ?? ''}
+                      placeholder="Grille (2W5H)"
+                      onChange={(e) => onUpdateItem(item.id, { grille: e.target.value || null })}
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
