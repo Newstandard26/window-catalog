@@ -19,7 +19,7 @@ export function ProposalDocument({
   client?: Client
 }) {
   const view = clientProposal(estimate)
-  const { windows, labor, materials, laborTotal, subtotal, tax, total } = view
+  const { windows, labor, subtotal, tax, total } = view
 
   return (
     <article className="mx-auto max-w-[8.5in] bg-white p-[0.75in] shadow-card print:max-w-[10in] print:shadow-none">
@@ -120,18 +120,10 @@ export function ProposalDocument({
         </table>
       </section>
 
+      {/* Client-facing totals: a single Subtotal line — no materials/labor
+          cost breakdown is ever shown to the customer. */}
       <section className="avoid-break mt-5 flex justify-end">
         <dl className="w-72 space-y-2 text-sm">
-          <div className="flex justify-between">
-            <dt className="text-slate-500">Materials</dt>
-            <dd className="tabular-nums text-slate-800">{currency(materials)}</dd>
-          </div>
-          {laborTotal > 0 && (
-            <div className="flex justify-between">
-              <dt className="text-slate-500">Labor</dt>
-              <dd className="tabular-nums text-slate-800">{currency(laborTotal)}</dd>
-            </div>
-          )}
           <div className="flex justify-between">
             <dt className="text-slate-500">Subtotal</dt>
             <dd className="tabular-nums text-slate-800">{currency(subtotal)}</dd>

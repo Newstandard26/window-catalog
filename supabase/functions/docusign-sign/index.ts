@@ -265,8 +265,7 @@ async function buildPdf(p: Proposal): Promise<Uint8Array> {
     right(val, cAmt, y, b ? 11 : 9.5, b ? bold : font)
     y -= 17
   }
-  totalRow('Materials', p.materials)
-  if (p.labor !== '$0.00') totalRow('Labor', p.labor)
+  // Client-facing totals: single Subtotal line — no materials/labor breakdown.
   totalRow('Subtotal', p.subtotal)
   totalRow('Tax', p.tax)
   hr(y + 9, tLabel, cAmt, 1, ink)
