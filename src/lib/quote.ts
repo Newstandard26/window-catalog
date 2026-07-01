@@ -25,7 +25,7 @@ export interface ParsedLine {
   widthIn?: number | null
   heightIn?: number | null
   sizeBasis?: string | null
-  type?: string | null
+  type?: 'New Construction' | 'Replacement' | 'Sash' | null
   exteriorColor?: string | null
   interiorColor?: string | null
   glass?: string | null
@@ -125,10 +125,21 @@ export function parsedLineToItem(line: ParsedLine): Omit<WindowItem, 'id'> {
         }))
       : undefined
   const name = [line.brand, line.series, line.style].filter(Boolean).join(' ').trim()
-  const installType: WindowConstruction = line.type === 'New Construction' ? 'New Construction' : 'Replacement'
+  const installType: WindowConstruction =
+    line.type === 'New Construction' ? 'New Construction' : line.type === 'Sash' ? 'Sash' : 'Replacement'
+  const hrsByType =
+    installType === 'New Construction'
+      ? DEFAULT_LABOR.newConstructionHrs
+      : installType === 'Sash'
+        ? DEFAULT_LABOR.sashHrs
+        : DEFAULT_LABOR.replacementHrs
+  // A blank / "None Assigned" location isn't a real location — leave it empty
+  // so the user can fill one in (the product descriptor is the line header).
+  const rawLoc = (line.location ?? '').trim()
+  const location = /none assigned/i.test(rawLoc) ? '' : rawLoc
   return {
     kind: 'material',
-    location: line.location || name || 'Imported window',
+    location,
     width: Number(line.widthIn) || 0,
     height: Number(line.heightIn) || 0,
     productId: '',
@@ -138,8 +149,7 @@ export function parsedLineToItem(line: ParsedLine): Omit<WindowItem, 'id'> {
     unitPrice: unitCost,
     priceOverridden: false,
     installType,
-    hrsPerWin:
-      installType === 'New Construction' ? DEFAULT_LABOR.newConstructionHrs : DEFAULT_LABOR.replacementHrs,
+    hrsPerWin: hrsByType,
     style: normStyle(line.style),
     sizeBasis: line.sizeBasis ?? null,
     grille: line.grille ?? null,

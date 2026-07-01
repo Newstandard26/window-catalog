@@ -49,6 +49,7 @@ export const DEFAULT_LABOR: LaborSettings = {
   hourlyRate: 75,
   newConstructionHrs: 2,
   replacementHrs: 1.5,
+  sashHrs: 1,
   overrideHours: null,
 }
 
@@ -64,7 +65,9 @@ export const laborRate = (e: Estimate): number => {
 /** Default install hours for an install type. */
 export const defaultHoursForType = (e: Estimate, type: WindowConstruction): number => {
   const s = laborSettings(e)
-  return type === 'New Construction' ? s.newConstructionHrs : s.replacementHrs
+  if (type === 'New Construction') return s.newConstructionHrs
+  if (type === 'Sash') return s.sashHrs
+  return s.replacementHrs
 }
 
 /** HRS/WIN for a line — its explicit value, else the install-type default. */

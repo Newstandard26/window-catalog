@@ -12,7 +12,7 @@ export const PIPELINE: EstimateStatus[] = [
   'Lost',
 ]
 
-export type WindowConstruction = 'New Construction' | 'Replacement'
+export type WindowConstruction = 'New Construction' | 'Replacement' | 'Sash'
 
 export type MarginMode = 'margin' | 'markup'
 
@@ -89,6 +89,8 @@ export interface LaborSettings {
   newConstructionHrs: number
   /** Default install hours per Replacement window (default 1.5). */
   replacementHrs: number
+  /** Default install hours per Sash-only replacement (default 1.0). */
+  sashHrs: number
   /** Optional manual override of the TOTAL install hours. null = use calc. */
   overrideHours: number | null
 }
@@ -203,6 +205,9 @@ export interface Estimate {
    * pre-profit subtotal (materials + labor + tax). */
   marginMode: MarginMode
   marginPct: number
+  /** Client-facing heading on the exported proposal (default "Preliminary
+   * Window Estimate"). */
+  proposalTitle?: string
   /** Labor settings (crew rate + default hours + optional total override). */
   labor?: LaborSettings
   /** Ad-hoc labor lines added on top of the per-window install calc. */

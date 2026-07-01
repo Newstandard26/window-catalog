@@ -111,7 +111,9 @@
   .no-print {
     display: none !important;
   }
+  /* Proposals print landscape (wider schedule + diagram column). */
   @page {
+    size: landscape;
     margin: 0.5in;
   }
 }

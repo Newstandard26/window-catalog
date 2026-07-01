@@ -29,7 +29,7 @@ Schema:
     "brand": string|null, "series": string|null, "style": string|null,
     "widthIn": number|null, "heightIn": number|null,
     "sizeBasis": "RO"|"Unit"|"Frame"|"Exact"|null,
-    "type": "New Construction"|"Replacement"|null,
+    "type": "New Construction"|"Replacement"|"Sash"|null,
     "exteriorColor": string|null, "interiorColor": string|null,
     "glass": string|null, "grille": string|null, "handing": "L"|"R"|null,
     "qty": number, "unitCost": number,
@@ -43,7 +43,7 @@ Schema:
 GENERAL RULES
 - One entry per distinct product line item.
 - COMPLETENESS IS CRITICAL. Return EVERY line item in the document, in order — do NOT merge, summarize, sample, or skip lines just because many look similar or repeated. An 18-page quote with 30 numbered Line #s must yield 30 line entries (plus any accessories). Never stop early or truncate the list.
-- "Sash Only" / "Replacement: Sash Only" items ARE windows — a sash replacement for that opening. Include every one as a "window" entry. Do NOT drop them.
+- "Sash Only" / "Replacement: Sash Only" items ARE windows — a sash replacement for that opening. Include every one as a "window" entry (do NOT drop them), and set "type": "Sash". Use "New Construction" or "Replacement" only for full-frame units.
 - unitCost = the PER-UNIT cost (what the buyer pays for ONE unit). NEVER the extended/line total (price × qty), and NEVER an order-level Subtotal, Tax, or grand Total.
 - unitCost numeric only — strip "$" and commas.
 - widthIn/heightIn in inches; convert fractions ("36 1/2" -> 36.5, "29 - 3/4\\"" -> 29.75). Use the WHOLE-unit size, not a single sub-lite's size.

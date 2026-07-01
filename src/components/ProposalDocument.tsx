@@ -22,7 +22,7 @@ export function ProposalDocument({
   const { windows, labor, materials, laborTotal, subtotal, tax, total } = view
 
   return (
-    <article className="mx-auto max-w-[8.5in] bg-white p-[0.75in] shadow-card print:shadow-none">
+    <article className="mx-auto max-w-[8.5in] bg-white p-[0.75in] shadow-card print:max-w-[10in] print:shadow-none">
       <header className="flex items-start justify-between border-b-2 border-ink-800 pb-5">
         <div>
           <div className="flex items-center gap-2.5">
@@ -37,7 +37,7 @@ export function ProposalDocument({
         </div>
         <div className="text-right">
           <div className="text-lg font-bold uppercase tracking-wide text-slate-700">
-            Preliminary Window Estimate
+            {estimate.proposalTitle?.trim() || 'Preliminary Window Estimate'}
           </div>
           <div className="mt-1 text-sm text-slate-500">{shortDate(estimate.updatedAt)}</div>
         </div>

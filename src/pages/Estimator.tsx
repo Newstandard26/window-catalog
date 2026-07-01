@@ -123,6 +123,7 @@ function DraftEstimator() {
     taxRate: 0.0825,
     marginMode: 'margin' as MarginMode,
     marginPct: 35,
+    proposalTitle: '',
     labor: { ...DEFAULT_LABOR } as LaborSettings,
     customLabor: [] as CustomLaborItem[],
     nameEdited: false,
@@ -138,6 +139,7 @@ function DraftEstimator() {
     taxRate: draft.taxRate,
     marginMode: draft.marginMode,
     marginPct: draft.marginPct,
+    proposalTitle: draft.proposalTitle,
     labor: draft.labor,
     customLabor: draft.customLabor,
     createdAt: new Date().toISOString(),
@@ -153,6 +155,7 @@ function DraftEstimator() {
       taxRate: draft.taxRate,
       marginMode: draft.marginMode,
       marginPct: draft.marginPct,
+      proposalTitle: draft.proposalTitle,
       labor: draft.labor,
       customLabor,
       items: items.map((it) => ({ ...it, id: newId('w') })),
@@ -193,6 +196,7 @@ function DraftEstimator() {
           onName={(name) => setDraft((d) => ({ ...d, name, nameEdited: true }))}
           onClient={onClientChange}
           onStatus={(status) => setDraft((d) => ({ ...d, status }))}
+          onProposalTitle={(proposalTitle) => setDraft((d) => ({ ...d, proposalTitle }))}
         />
         <p className="-mt-3 mb-6 text-sm text-slate-500">
           This draft isn’t saved yet — it’s added to Projects when you add a window or click{' '}
@@ -314,6 +318,7 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
           onName={(name) => updateEstimate(estimate.id, { name })}
           onClient={onClientChange}
           onStatus={(status) => updateEstimate(estimate.id, { status })}
+          onProposalTitle={(proposalTitle) => updateEstimate(estimate.id, { proposalTitle })}
         />
         <EstimatorBody
           estimate={estimate}
@@ -341,12 +346,14 @@ function MetaBar({
   onName,
   onClient,
   onStatus,
+  onProposalTitle,
 }: {
   estimate: Estimate
   clients: ReturnType<typeof useStore>['clients']
   onName: (name: string) => void
   onClient: (clientId: string) => void
   onStatus: (status: EstimateStatus) => void
+  onProposalTitle: (title: string) => void
 }) {
   const client = clients.find((c) => c.id === estimate.clientId)
   // Only non-archived clients are selectable. If this estimate is already tied to
@@ -391,6 +398,15 @@ function MetaBar({
               </option>
             ))}
           </select>
+        </div>
+        <div className="md:col-span-6">
+          <label className="field-label">Proposal heading (shown on the exported PDF)</label>
+          <input
+            className="field"
+            value={estimate.proposalTitle ?? ''}
+            placeholder="Preliminary Window Estimate"
+            onChange={(e) => onProposalTitle(e.target.value)}
+          />
         </div>
       </div>
       {client && (
@@ -669,6 +685,7 @@ function WindowForm({
           >
             <option value="Replacement">Replacement</option>
             <option value="New Construction">New Construction</option>
+            <option value="Sash">Sash</option>
           </select>
         </div>
         <div>
@@ -1195,14 +1212,23 @@ function WindowSchedule({
           return (
             <div key={item.id} className="p-5">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="font-semibold text-slate-900">{item.location}</div>
-                  <div className="text-sm text-slate-500">
-                    {`${item.productName || 'Custom'} · ${item.width}" × ${item.height}"`}
+                <div className="min-w-0 flex-1">
+                  {/* Header = the product descriptor; location is an editable subheader. */}
+                  <div className="font-semibold text-slate-900">
+                    {item.productName || 'Custom window'}
+                    <span className="ml-2 text-sm font-normal text-slate-400">
+                      {item.width}" × {item.height}"
+                    </span>
                   </div>
+                  <input
+                    className="mt-1 w-full max-w-xs rounded border border-slate-300 bg-transparent px-2 py-1 text-sm text-slate-700 placeholder:text-slate-400"
+                    value={item.location}
+                    placeholder="Add a location (e.g. Kitchen)"
+                    onChange={(e) => onUpdateItem(item.id, { location: e.target.value })}
+                  />
                 </div>
                 <button
-                  className="text-sm font-medium text-slate-400 hover:text-rose-600"
+                  className="shrink-0 text-sm font-medium text-slate-400 hover:text-rose-600"
                   onClick={() => onRemove(item.id)}
                 >
                   Remove
@@ -1243,6 +1269,7 @@ function WindowSchedule({
                   >
                     <option value="Replacement">Replacement</option>
                     <option value="New Construction">New Construction</option>
+                    <option value="Sash">Sash</option>
                   </select>
                 </div>
                 <div>
@@ -1452,6 +1479,17 @@ function EstimateSummary({
               className="field"
               value={s.replacementHrs}
               onChange={(e) => onLaborChange({ replacementHrs: Math.max(0, Number(e.target.value)) })}
+            />
+          </label>
+          <label className="block">
+            <span className="field-label">Sash hrs</span>
+            <input
+              type="number"
+              min={0}
+              step={0.25}
+              className="field"
+              value={s.sashHrs}
+              onChange={(e) => onLaborChange({ sashHrs: Math.max(0, Number(e.target.value)) })}
             />
           </label>
           <label className="col-span-2 block">
