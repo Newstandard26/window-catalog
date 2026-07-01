@@ -1604,7 +1604,7 @@ function EstimateSummary({
         />
         <div className="flex items-center justify-between gap-3">
           <dt className="flex items-center gap-2 text-slate-500">
-            Tax<span className="text-xs text-slate-400">(on material sell price)</span>
+            Tax<span className="text-xs text-slate-400">(on material cost)</span>
             <span className="relative">
               <input
                 type="number"
@@ -1632,7 +1632,8 @@ function EstimateSummary({
         </div>
         <p className="mt-2 text-xs text-slate-400">
           The global {isMargin ? 'margin' : 'markup'} is applied to materials + labor only. Sales tax
-          is calculated on the marked-up material price and is never marked up. Labor is never taxed.
+          is a flat pass-through on the material cost — it never changes with the margin and is never
+          marked up. Labor is never taxed.
         </p>
       </div>
     </div>

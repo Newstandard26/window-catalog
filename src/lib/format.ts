@@ -139,17 +139,15 @@ export const marginFactor = (mode: MarginMode, pct: number): number => {
   return 1 / (1 - safe / 100)
 }
 
-/** Marked-up (selling) price of materials — the taxable base. */
-export const estimateMaterialSell = (e: Estimate) =>
-  estimateMaterialPrice(e) * marginFactor(e.marginMode, e.marginPct)
-
 /**
- * Sales tax = taxRate × the materials SELLING price (what the customer is
- * charged). Labor is never taxed, and tax is never marked up.
+ * Sales tax = taxRate × the materials COST. As an installing contractor NSR is
+ * the end user of the materials, so tax is a flat pass-through on what NSR
+ * pays the vendor — it is never marked up and never moves with the margin.
+ * Labor is never taxed.
  */
-export const estimateTax = (e: Estimate) => estimateMaterialSell(e) * (e.taxRate ?? 0)
+export const estimateTax = (e: Estimate) => estimateMaterialPrice(e) * (e.taxRate ?? 0)
 
-/** Job total = (materials + labor) × margin factor, plus tax on the sell price. */
+/** Job total = (materials + labor) × margin factor, plus flat pass-through tax. */
 export const estimateTotal = (e: Estimate) =>
   estimatePreProfit(e) * marginFactor(e.marginMode, e.marginPct) + estimateTax(e)
 
@@ -184,9 +182,9 @@ export interface ClientProposal {
 /**
  * Client-facing build-up. The global margin is folded uniformly into the
  * displayed window and labor prices so the breakdown foots to the job Total
- * without ever exposing cost, margin, or profit. Tax is calculated on the
- * displayed (marked-up) materials — the actual selling price — so it is never
- * marked up, and the columns always sum to Total.
+ * without ever exposing cost, margin, or profit. Tax is the flat pass-through
+ * on NSR's material cost (never marked up, independent of margin), so the
+ * columns always sum to Total.
  */
 export function clientProposal(e: Estimate): ClientProposal {
   const f = marginFactor(e.marginMode, e.marginPct)
@@ -206,7 +204,7 @@ export function clientProposal(e: Estimate): ClientProposal {
   const materials = round2(windows.reduce((s, w) => s + w.lineTotal, 0))
   const laborTotal = round2(labor.reduce((s, l) => s + l.amount, 0))
   const subtotal = round2(materials + laborTotal)
-  const tax = round2(materials * (e.taxRate ?? 0))
+  const tax = round2(estimateTax(e))
   const total = round2(subtotal + tax)
   return { windows, labor, materials, laborTotal, subtotal, tax, total }
 }
