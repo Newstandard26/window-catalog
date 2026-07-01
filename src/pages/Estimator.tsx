@@ -1594,9 +1594,17 @@ function EstimateSummary({
             {customLabor > 0 && ` + ${currency(customLabor)} custom`}
           </div>
         </div>
+        <div className="border-t border-slate-100 pt-3">
+          <Row label="Subtotal" value={currency(subtotal)} />
+        </div>
+        <Row
+          label={`${isMargin ? 'Margin' : 'Markup'} (${estimate.marginPct}%)`}
+          value={currency(profit)}
+          className="text-emerald-300"
+        />
         <div className="flex items-center justify-between gap-3">
           <dt className="flex items-center gap-2 text-slate-500">
-            Tax<span className="text-xs text-slate-400">(material)</span>
+            Tax<span className="text-xs text-slate-400">(on material sell price)</span>
             <span className="relative">
               <input
                 type="number"
@@ -1611,14 +1619,6 @@ function EstimateSummary({
           </dt>
           <dd className="font-semibold tabular-nums text-slate-900">{currency(tax)}</dd>
         </div>
-        <div className="border-t border-slate-100 pt-3">
-          <Row label="Subtotal" value={currency(subtotal)} />
-        </div>
-        <Row
-          label={`${isMargin ? 'Margin' : 'Markup'} (${estimate.marginPct}%)`}
-          value={currency(profit)}
-          className="text-emerald-300"
-        />
       </dl>
 
       <div className="mt-4 border-t border-slate-200 pt-4">
@@ -1631,8 +1631,8 @@ function EstimateSummary({
           <span className="text-lg font-bold tabular-nums text-brand-500">{currency(profit)}</span>
         </div>
         <p className="mt-2 text-xs text-slate-400">
-          One global {isMargin ? 'margin' : 'markup'} is applied to materials + labor + tax. Labor is
-          included in the subtotal but never taxed.
+          The global {isMargin ? 'margin' : 'markup'} is applied to materials + labor only. Sales tax
+          is calculated on the marked-up material price and is never marked up. Labor is never taxed.
         </p>
       </div>
     </div>

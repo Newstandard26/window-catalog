@@ -117,20 +117,20 @@ export const estimateLaborTotal = (e: Estimate): number =>
 
 /* ----------------------------- Build-up totals ---------------------------- */
 
-/** Tax applies to materials only — labor is never taxed. */
-export const estimateTax = (e: Estimate) => estimateMaterialPrice(e) * (e.taxRate ?? 0)
-
-/** Pre-profit subtotal = materials + labor + tax (the global-margin base). */
+/**
+ * Pre-profit subtotal = materials + labor — the global-margin base.
+ * Tax is deliberately NOT in this base: marking up sales tax is illegal.
+ */
 export const estimatePreProfit = (e: Estimate) =>
-  estimateMaterialPrice(e) + estimateLaborTotal(e) + estimateTax(e)
+  estimateMaterialPrice(e) + estimateLaborTotal(e)
 
-/** Back-compat alias: "subtotal" now means the pre-profit subtotal. */
+/** Back-compat alias: "subtotal" means the pre-profit (materials + labor). */
 export const estimateSubtotal = (e: Estimate) => estimatePreProfit(e)
 
 /**
  * Global margin/markup multiplier applied to the pre-profit subtotal.
- *   margin:  Total = subtotal / (1 − pct)   → factor 1 / (1 − pct)
- *   markup:  Total = subtotal × (1 + pct)   → factor (1 + pct)
+ *   margin:  sell = subtotal / (1 − pct)   → factor 1 / (1 − pct)
+ *   markup:  sell = subtotal × (1 + pct)   → factor (1 + pct)
  * Margin pct is clamped below 100 to avoid divide-by-zero / negatives.
  */
 export const marginFactor = (mode: MarginMode, pct: number): number => {
@@ -139,12 +139,23 @@ export const marginFactor = (mode: MarginMode, pct: number): number => {
   return 1 / (1 - safe / 100)
 }
 
-/** Job total = pre-profit subtotal × global margin factor. */
-export const estimateTotal = (e: Estimate) =>
-  estimatePreProfit(e) * marginFactor(e.marginMode, e.marginPct)
+/** Marked-up (selling) price of materials — the taxable base. */
+export const estimateMaterialSell = (e: Estimate) =>
+  estimateMaterialPrice(e) * marginFactor(e.marginMode, e.marginPct)
 
-/** Profit = Total − pre-profit subtotal (the global margin dollars). */
-export const estimateProfit = (e: Estimate) => estimateTotal(e) - estimatePreProfit(e)
+/**
+ * Sales tax = taxRate × the materials SELLING price (what the customer is
+ * charged). Labor is never taxed, and tax is never marked up.
+ */
+export const estimateTax = (e: Estimate) => estimateMaterialSell(e) * (e.taxRate ?? 0)
+
+/** Job total = (materials + labor) × margin factor, plus tax on the sell price. */
+export const estimateTotal = (e: Estimate) =>
+  estimatePreProfit(e) * marginFactor(e.marginMode, e.marginPct) + estimateTax(e)
+
+/** Profit = margin dollars on materials + labor (tax passes through untouched). */
+export const estimateProfit = (e: Estimate) =>
+  estimatePreProfit(e) * (marginFactor(e.marginMode, e.marginPct) - 1)
 
 export const totalWindowCount = (e: Estimate) =>
   windowLines(e).reduce((sum, item) => sum + item.quantity, 0)
@@ -173,8 +184,9 @@ export interface ClientProposal {
 /**
  * Client-facing build-up. The global margin is folded uniformly into the
  * displayed window and labor prices so the breakdown foots to the job Total
- * without ever exposing cost, margin, or profit. Tax is back-solved as
- * (Total − marked-up goods) so the columns always sum to Total.
+ * without ever exposing cost, margin, or profit. Tax is calculated on the
+ * displayed (marked-up) materials — the actual selling price — so it is never
+ * marked up, and the columns always sum to Total.
  */
 export function clientProposal(e: Estimate): ClientProposal {
   const f = marginFactor(e.marginMode, e.marginPct)
@@ -194,8 +206,8 @@ export function clientProposal(e: Estimate): ClientProposal {
   const materials = round2(windows.reduce((s, w) => s + w.lineTotal, 0))
   const laborTotal = round2(labor.reduce((s, l) => s + l.amount, 0))
   const subtotal = round2(materials + laborTotal)
-  const total = round2(estimateTotal(e))
-  const tax = round2(total - subtotal)
+  const tax = round2(materials * (e.taxRate ?? 0))
+  const total = round2(subtotal + tax)
   return { windows, labor, materials, laborTotal, subtotal, tax, total }
 }
 
