@@ -5,16 +5,20 @@ import { PageHeader } from '../components/PageHeader'
 import { StatusBadge } from '../components/StatusBadge'
 import { useStore } from '../data/store'
 import { currency, estimateTotal, shortDate, totalWindowCount } from '../lib/format'
+import { activeEstimates } from '../lib/stats'
 import { PIPELINE, type EstimateStatus } from '../types'
 
 export function Projects() {
-  const { estimates, getClient, setEstimateStatus, removeEstimate } = useStore()
+  const { estimates, clients, getClient, setEstimateStatus, removeEstimate } = useStore()
 
   const onDelete = (id: string, name: string) => {
     if (window.confirm(`Delete "${name}"? This can't be undone.`)) {
       removeEstimate(id)
     }
   }
+
+  // Estimates of archived (lost) clients drop out of the active pipeline.
+  const visible = useMemo(() => activeEstimates(estimates, clients), [estimates, clients])
 
   // Phase 5: the pipeline counts/totals come straight from each estimate's status.
   const byStage = useMemo(() => {
@@ -25,16 +29,16 @@ export function Projects() {
       Won: 0,
       Lost: 0,
     }
-    for (const e of estimates) map[e.status] += estimateTotal(e)
+    for (const e of visible) map[e.status] += estimateTotal(e)
     return map
-  }, [estimates])
+  }, [visible])
 
   const ordered = useMemo(
     () =>
-      [...estimates].sort(
+      [...visible].sort(
         (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
       ),
-    [estimates],
+    [visible],
   )
 
   return (
@@ -48,7 +52,7 @@ export function Projects() {
         {/* Pipeline summary */}
         <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           {PIPELINE.map((stage) => {
-            const count = estimates.filter((e) => e.status === stage).length
+            const count = visible.filter((e) => e.status === stage).length
             return (
               <div key={stage} className="nsr-card p-5">
                 <StatusBadge status={stage} />

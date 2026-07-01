@@ -23,7 +23,7 @@ import type {
 import { SEED_CLIENTS, SEED_ESTIMATES } from './seed'
 import { catalogKey, type CatalogUpsertInput } from './catalog'
 import { DEFAULT_LABOR, estimateSubtotal, estimateTotal } from '../lib/format'
-import { getClientStats } from '../lib/stats'
+import { activeEstimates, getClientStats } from '../lib/stats'
 import { fetchSignedDocuments, getSigningStatus, isDocusignConfigured } from '../lib/sign'
 import { cloudDelete, cloudEnabled, cloudLoad, cloudUpsert } from './cloud'
 
@@ -619,7 +619,10 @@ export function useMetrics() {
   const { clients, estimates } = useStore()
 
   return useMemo(() => {
-    const won = estimates.filter((e) => e.status === 'Won')
+    // Estimates of archived (lost) clients drop out of every rollup, same as
+    // they leave the client counts.
+    const live = activeEstimates(estimates, clients)
+    const won = live.filter((e) => e.status === 'Won')
     const wonRevenue = won.reduce((s, e) => s + estimateTotal(e), 0)
 
     const now = new Date()
@@ -631,7 +634,7 @@ export function useMetrics() {
       .reduce((s, e) => s + estimateTotal(e), 0)
 
     // Pipeline value = everything still in play (not Lost).
-    const pipelineValue = estimates
+    const pipelineValue = live
       .filter((e) => e.status !== 'Lost')
       .reduce((s, e) => s + estimateTotal(e), 0)
 
@@ -644,7 +647,7 @@ export function useMetrics() {
       pipelineValue,
       activeClients: clientStats.active,
       prospects: clientStats.prospects,
-      pendingCount: estimates.filter((e) => e.status === 'Pending' || e.status === 'Sent').length,
+      pendingCount: live.filter((e) => e.status === 'Pending' || e.status === 'Sent').length,
     }
   }, [clients, estimates])
 }

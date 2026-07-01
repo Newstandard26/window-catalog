@@ -6,6 +6,7 @@ import { StatCard } from '../components/StatCard'
 import { StatusBadge } from '../components/StatusBadge'
 import { useMetrics, useStore } from '../data/store'
 import { currency, estimateTotal, shortDate } from '../lib/format'
+import { activeEstimates } from '../lib/stats'
 import type { ClientStatus } from '../types'
 
 type ClientFilter = 'All' | 'Active' | 'Prospect' | 'Archived'
@@ -25,12 +26,12 @@ export function Dashboard() {
 
   const recent = useMemo(
     () =>
-      [...estimates]
+      activeEstimates(estimates, clients)
         // skip empty estimates with no client and no windows.
         .filter((e) => e.clientId || e.items.length > 0)
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
         .slice(0, 6),
-    [estimates],
+    [estimates, clients],
   )
 
   const archivedCount = useMemo(() => clients.filter((c) => c.archived).length, [clients])

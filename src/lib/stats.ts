@@ -1,4 +1,4 @@
-import type { Client } from '../types'
+import type { Client, Estimate } from '../types'
 
 export interface ClientStats {
   active: number
@@ -13,6 +13,17 @@ export interface ClientStats {
  */
 export function getActiveClients(clients: Client[]): Client[] {
   return clients.filter((c) => !c.archived)
+}
+
+/**
+ * Estimates that belong to a non-archived client (or to no client). Archiving a
+ * client treats it as lost, so its estimates drop out of the pipeline value,
+ * won revenue, and the Projects list — mirroring how archived clients leave the
+ * client counts. Their estimates are still visible on the client's own profile.
+ */
+export function activeEstimates(estimates: Estimate[], clients: Client[]): Estimate[] {
+  const archived = new Set(clients.filter((c) => c.archived).map((c) => c.id))
+  return estimates.filter((e) => !e.clientId || !archived.has(e.clientId))
 }
 
 /**
