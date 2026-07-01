@@ -23,7 +23,7 @@ export function ProposalDocument({
 
   return (
     <article className="mx-auto max-w-[8.5in] bg-white p-[0.75in] shadow-card print:max-w-[10in] print:shadow-none">
-      <header className="flex items-start justify-between border-b-2 border-ink-800 pb-5">
+      <header className="avoid-break flex items-start justify-between border-b-2 border-ink-800 pb-5">
         <div>
           <div className="flex items-center gap-2.5">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 font-bold text-white">
@@ -43,7 +43,7 @@ export function ProposalDocument({
         </div>
       </header>
 
-      <section className="mt-6 grid grid-cols-2 gap-6 text-sm">
+      <section className="avoid-break mt-6 grid grid-cols-2 gap-6 text-sm">
         <div>
           <div className="font-semibold uppercase tracking-wide text-slate-400">Prepared for</div>
           <div className="mt-1 text-base font-semibold text-slate-900">{client?.name ?? '—'}</div>
@@ -120,7 +120,7 @@ export function ProposalDocument({
         </table>
       </section>
 
-      <section className="mt-5 flex justify-end">
+      <section className="avoid-break mt-5 flex justify-end">
         <dl className="w-72 space-y-2 text-sm">
           <div className="flex justify-between">
             <dt className="text-slate-500">Materials</dt>
@@ -147,7 +147,7 @@ export function ProposalDocument({
         </dl>
       </section>
 
-      <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-400">
+      <footer className="avoid-break mt-10 border-t border-slate-200 pt-4 text-xs text-slate-400">
         This is a preliminary estimate prepared by {COMPANY.name}. Pricing valid for 30 days. Final
         pricing subject to field measurement and product availability.
       </footer>

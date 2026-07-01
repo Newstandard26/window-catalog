@@ -107,13 +107,38 @@
 }
 
 /* Task 2: print styles for the proposal / Save-as-PDF output. */
+/* Proposals print landscape (wider schedule + diagram column). */
+@page {
+  size: letter landscape;
+  margin: 0.5in;
+}
 @media print {
   .no-print {
     display: none !important;
   }
-  /* Proposals print landscape (wider schedule + diagram column). */
-  @page {
-    size: landscape;
-    margin: 0.5in;
+  html,
+  body {
+    background: #ffffff !important;
+  }
+  /* Use the full landscape width — drop the on-screen page frame/padding. */
+  .paper {
+    background: #ffffff !important;
+    padding: 0 !important;
+  }
+  .paper article {
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+  /* Clean page breaks: never split a window row; repeat the column header;
+     keep the totals + footer blocks intact. */
+  .paper thead {
+    display: table-header-group;
+  }
+  .paper tr,
+  .paper .avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 }
