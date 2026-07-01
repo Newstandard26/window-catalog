@@ -156,6 +156,8 @@ interface StoreValue {
   updateCustomLabor: (estimateId: string, laborId: string, patch: Partial<CustomLaborItem>) => void
   removeCustomLabor: (estimateId: string, laborId: string) => void
   addWindowItem: (estimateId: string, item: Omit<WindowItem, 'id'>) => void
+  /** Add many window items to ONE estimate at once (used by quote import). */
+  addWindowItems: (estimateId: string, items: Omit<WindowItem, 'id'>[]) => void
   updateWindowItem: (estimateId: string, itemId: string, patch: Partial<WindowItem>) => void
   removeWindowItem: (estimateId: string, itemId: string) => void
   newId: (prefix: string) => string
@@ -500,6 +502,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
+  const addWindowItems: StoreValue['addWindowItems'] = useCallback((estimateId, items) => {
+    if (!items.length) return
+    const withIds: WindowItem[] = items.map((it) => ({ ...it, id: uid('w') }))
+    setEstimates((prev) =>
+      prev.map((e) => touch(estimateId, e.id === estimateId ? { ...e, items: [...e.items, ...withIds] } : e)),
+    )
+  }, [])
+
   const updateWindowItem: StoreValue['updateWindowItem'] = useCallback(
     (estimateId, itemId, patch) => {
       setEstimates((prev) =>
@@ -548,6 +558,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateCustomLabor,
     removeCustomLabor,
     addWindowItem,
+    addWindowItems,
     updateWindowItem,
     removeWindowItem,
     newId: uid,

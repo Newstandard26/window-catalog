@@ -201,6 +201,7 @@ function DraftEstimator() {
         <EstimatorBody
           estimate={view}
           onAddItem={(item) => persist([item])}
+          onAddItems={(items) => persist(items)}
           onUpdateItem={() => {}}
           onRemoveItem={() => {}}
           onTaxChange={(taxRate) => setDraft((d) => ({ ...d, taxRate }))}
@@ -239,6 +240,7 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
     removeCustomLabor,
     sendForSignature,
     addWindowItem,
+    addWindowItems,
     updateWindowItem,
     removeWindowItem,
   } = useStore()
@@ -316,6 +318,7 @@ function PersistedEstimator({ estimate }: { estimate: Estimate }) {
         <EstimatorBody
           estimate={estimate}
           onAddItem={(item) => addWindowItem(estimate.id, item)}
+          onAddItems={(items) => addWindowItems(estimate.id, items)}
           onUpdateItem={(itemId, patch) => updateWindowItem(estimate.id, itemId, patch)}
           onRemoveItem={(itemId) => removeWindowItem(estimate.id, itemId)}
           onTaxChange={(taxRate) => updateEstimate(estimate.id, { taxRate })}
@@ -409,6 +412,7 @@ interface LaborHandlers {
 function EstimatorBody({
   estimate,
   onAddItem,
+  onAddItems,
   onUpdateItem,
   onRemoveItem,
   onTaxChange,
@@ -420,6 +424,7 @@ function EstimatorBody({
 }: {
   estimate: Estimate
   onAddItem: (item: Omit<WindowItem, 'id'>) => void
+  onAddItems: (items: Omit<WindowItem, 'id'>[]) => void
   onUpdateItem: (itemId: string, patch: Partial<WindowItem>) => void
   onRemoveItem: (itemId: string) => void
   onTaxChange: (rate: number) => void
@@ -442,7 +447,7 @@ function EstimatorBody({
           open={toolsOpen}
           onToggle={() => setToolsOpen((v) => !v)}
           onAddItems={(items) => {
-            items.forEach(onAddItem)
+            onAddItems(items)
             setToolsOpen(false)
           }}
         />
