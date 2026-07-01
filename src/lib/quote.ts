@@ -58,6 +58,8 @@ export interface ParseResult {
   quoteNumber: string | null
   filename?: string
   lines: ParsedLine[]
+  /** True when the model response was cut off (some lines may be missing). */
+  truncated?: boolean
 }
 
 function fileToBase64(file: File): Promise<string> {

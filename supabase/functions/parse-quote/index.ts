@@ -42,6 +42,8 @@ Schema:
 
 GENERAL RULES
 - One entry per distinct product line item.
+- COMPLETENESS IS CRITICAL. Return EVERY line item in the document, in order — do NOT merge, summarize, sample, or skip lines just because many look similar or repeated. An 18-page quote with 30 numbered Line #s must yield 30 line entries (plus any accessories). Never stop early or truncate the list.
+- "Sash Only" / "Replacement: Sash Only" items ARE windows — a sash replacement for that opening. Include every one as a "window" entry. Do NOT drop them.
 - unitCost = the PER-UNIT cost (what the buyer pays for ONE unit). NEVER the extended/line total (price × qty), and NEVER an order-level Subtotal, Tax, or grand Total.
 - unitCost numeric only — strip "$" and commas.
 - widthIn/heightIn in inches; convert fractions ("36 1/2" -> 36.5, "29 - 3/4\\"" -> 29.75). Use the WHOLE-unit size, not a single sub-lite's size.
@@ -54,7 +56,7 @@ GENERAL RULES
 - confidence 0..1 for the row (low when a value was guessed).
 
 PELLA — "Proposal - Detailed"
-- Each item block has a Line # (10,15,20,…) and three columns: "Item Price | Qty | Ext'd Price". unitCost = Item Price (already per-unit). qty = Qty.
+- EVERY numbered Line # (10, 15, 20, 25, … through the last) is its own entry — a large quote has dozens; return them ALL, including every "Sash Only" casement. Each item block has a Line # and three columns: "Item Price | Qty | Ext'd Price". unitCost = Item Price (already per-unit). qty = Qty.
 - The bold heading names the assembled unit; use it VERBATIM (minus boilerplate) as style: "Lifestyle, Casement Left, 29 X 59" -> "Casement" (handing L); "Awning, Vent" -> "Awning"; "Double Sliding Door … Fixed / Vent Left" -> "Double Sliding Patio Door" (category door); "Fixed Frame Octagon" -> "Direct Set Octagon"; "2-Wide Casement, 58 X 46.5" -> "2-Wide Casement"; "Casement, Lifestyle, Direct Set Fixed Frame Half Circle, 35 X 53" -> "Casement + Half-Circle".
 - Size: use the nominal whole-unit size from the heading / unit "Frame Size" (e.g. "29 X 59" -> 29×59). For a mulled/combo unit use the OVERALL size in the heading (e.g. "58 X 46.5"), NOT each sub-unit's Frame Size. (Rough Opening is ~3/4" larger — prefer the unit/frame size.) sizeBasis "Frame".
 - A single Line # may contain numbered sub-units, each with its own "Frame Size" + operation + handing ("1: 2959 Left Casement, Frame Size 29 X 46 1/2", "2: 3517.5 Fixed Frame Direct Set Half Circle, Frame Size 35 X 17 1/2"), plus a "Vertical Mull" or "Horizontal Mull" line. Put EACH sub-unit in sections with its own widthIn/heightIn/operation/handing, and set mullType from "Vertical Mull" -> vertical (side-by-side) or "Horizontal Mull" -> horizontal (stacked/transom). Example — "2-Wide Casement, 58 X 46.5" with two 29 X 46 1/2 casements + Vertical Mull: style "2-Wide Casement", widthIn 58, heightIn 46.5, sections [{"operation":"Casement","widthIn":29,"heightIn":46.5,"handing":"L"},{"operation":"Casement","widthIn":29,"heightIn":46.5,"handing":"R"}], mullType "vertical". Example — casement 35 X 35.5 with a Half-Circle 35 X 17.5 above + Horizontal Mull: style "Casement + Half-Circle", widthIn 35, heightIn 53, sections [{"operation":"Casement","widthIn":35,"heightIn":35.5,"handing":"L"},{"operation":"Half-Circle","widthIn":35,"heightIn":17.5,"handing":null}], mullType "horizontal".
@@ -82,6 +84,52 @@ function extractJson(text: string): unknown {
   const b = text.lastIndexOf('}')
   if (a === -1 || b === -1 || b < a) throw new Error('No JSON found in model response')
   return JSON.parse(text.slice(a, b + 1))
+}
+
+/**
+ * Salvage line objects from a possibly-truncated response. Walks the `lines`
+ * array brace-by-brace and JSON-parses each COMPLETE `{...}` object, so a
+ * response cut off mid-array still yields every complete line instead of 0.
+ */
+function salvageLines(text: string): { vendor: string | null; quoteNumber: string | null; lines: unknown[] } {
+  const vendor = text.match(/"vendor"\s*:\s*"([^"]*)"/)?.[1] ?? null
+  const quoteNumber = text.match(/"quoteNumber"\s*:\s*"([^"]*)"/)?.[1] ?? null
+  const li = text.indexOf('"lines"')
+  const arrStart = text.indexOf('[', li >= 0 ? li : 0)
+  const lines: unknown[] = []
+  if (arrStart >= 0) {
+    let depth = 0
+    let inStr = false
+    let esc = false
+    let objStart = -1
+    for (let i = arrStart + 1; i < text.length; i++) {
+      const ch = text[i]
+      if (inStr) {
+        if (esc) esc = false
+        else if (ch === '\\') esc = true
+        else if (ch === '"') inStr = false
+        continue
+      }
+      if (ch === '"') inStr = true
+      else if (ch === '{') {
+        if (depth === 0) objStart = i
+        depth++
+      } else if (ch === '}') {
+        depth--
+        if (depth === 0 && objStart >= 0) {
+          try {
+            lines.push(JSON.parse(text.slice(objStart, i + 1)))
+          } catch {
+            /* skip a malformed / incomplete object */
+          }
+          objStart = -1
+        }
+      } else if (ch === ']' && depth === 0) {
+        break
+      }
+    }
+  }
+  return { vendor, quoteNumber, lines }
 }
 
 Deno.serve(async (req) => {
@@ -126,7 +174,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 16000,
+        max_tokens: 32000,
         messages: [{ role: 'user', content: [docBlock, { type: 'text', text: PROMPT }] }],
       }),
     })
@@ -135,20 +183,42 @@ Deno.serve(async (req) => {
       return json({ error: `Extraction model error (${res.status}): ${text}` }, 502)
     }
     const data = await res.json()
+    const stopReason: string | null = data.stop_reason ?? null
     const text: string = (data.content ?? [])
       .filter((b: { type: string }) => b.type === 'text')
       .map((b: { text: string }) => b.text)
       .join('')
 
-    let parsed: { vendor?: string; quoteNumber?: string; lines?: unknown[] }
+    // Prefer a clean whole-object parse; fall back to salvaging complete line
+    // objects when the model truncated the array (large multi-page quotes).
+    let vendor: string | null = null
+    let quoteNumber: string | null = null
+    let lines: unknown[] = []
+    let parsedCleanly = false
     try {
-      parsed = extractJson(text) as typeof parsed
-    } catch (e) {
-      return json({ error: `Could not parse extraction output: ${e instanceof Error ? e.message : e}` }, 502)
+      const parsed = extractJson(text) as { vendor?: string; quoteNumber?: string; lines?: unknown[] }
+      if (Array.isArray(parsed.lines)) {
+        vendor = parsed.vendor ?? null
+        quoteNumber = parsed.quoteNumber ?? null
+        lines = parsed.lines
+        parsedCleanly = true
+      }
+    } catch {
+      /* fall through to salvage */
+    }
+    if (!parsedCleanly) {
+      const salvaged = salvageLines(text)
+      vendor = salvaged.vendor
+      quoteNumber = salvaged.quoteNumber
+      lines = salvaged.lines
     }
 
-    const lines = Array.isArray(parsed.lines) ? parsed.lines : []
-    return json({ vendor: parsed.vendor ?? null, quoteNumber: parsed.quoteNumber ?? null, filename, lines })
+    const truncated = stopReason === 'max_tokens'
+    console.log(`parse-quote: ${lines.length} lines, stop=${stopReason}, clean=${parsedCleanly}, file=${filename ?? ''}`)
+    if (!lines.length) {
+      return json({ error: `Could not parse any line items from the response (stop=${stopReason}).` }, 502)
+    }
+    return json({ vendor, quoteNumber, filename, lines, truncated })
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500)
   }

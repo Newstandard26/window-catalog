@@ -1036,6 +1036,12 @@ function ImportQuoteModal({
               {result.quoteNumber ? `quote #${result.quoteNumber} · ` : ''}
               {rows.length} line{rows.length === 1 ? '' : 's'} found — review, then add.
             </div>
+            {result.truncated && (
+              <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+                This quote was long enough that the extraction may have been cut off — double-check that
+                every line came through, and re-import if any are missing.
+              </div>
+            )}
             <div className="mt-3 flex-1 overflow-auto rounded-lg border border-slate-200">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
